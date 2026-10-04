@@ -27,6 +27,9 @@ void main() {
   for (final scenario in [
     'success',
     'rejected',
+    'owner blocked',
+    'retry',
+    'concurrent',
     'unexpected',
     'logout failure',
     'storage failure',
@@ -40,9 +43,22 @@ void main() {
         request.response.headers.contentType = ContentType.json;
         if (request.uri.path == '/functions/v1/delete-account') {
           expect(request.headers.value('authorization'), startsWith('Bearer '));
-          request.response.statusCode = scenario == 'rejected' ? 403 : 200;
+          final attempt = requests
+              .where((path) => path == '/functions/v1/delete-account')
+              .length;
+          request.response.statusCode = scenario == 'owner blocked'
+              ? 409
+              : scenario == 'rejected'
+              ? 403
+              : scenario == 'retry' && attempt == 1
+              ? 503
+              : 200;
           request.response.write(
-            jsonEncode({'deleted': scenario != 'unexpected'}),
+            jsonEncode(
+              scenario == 'owner blocked'
+                  ? {'error': 'tenant_owner_requires_transfer'}
+                  : {'deleted': scenario != 'unexpected'},
+            ),
           );
         } else {
           expect(request.uri.path, '/auth/v1/logout');
@@ -84,7 +100,41 @@ void main() {
       );
       final storage = _Storage()..failRemoval = scenario == 'storage failure';
       final service = SupabaseAccountAuthService(client, storage);
-      if (scenario == 'rejected' || scenario == 'unexpected') {
+      if (scenario == 'owner blocked') {
+        await expectLater(
+          service.deleteAccount(),
+          throwsA(
+            isA<AuthException>().having(
+              (error) => error.message,
+              'message',
+              allOf(contains('所有権'), contains('閉鎖')),
+            ),
+          ),
+        );
+        expect(client.auth.currentSession, isNotNull);
+        expect(await storage.hasAccessToken(), isTrue);
+        expect(requests, ['/functions/v1/delete-account']);
+      } else if (scenario == 'retry') {
+        await expectLater(
+          service.deleteAccount(),
+          throwsA(isA<AuthException>()),
+        );
+        expect(client.auth.currentSession, isNotNull);
+        expect(await storage.hasAccessToken(), isTrue);
+        await service.deleteAccount();
+        expect(client.auth.currentSession, isNull);
+        expect(await storage.hasAccessToken(), isFalse);
+        expect(requests, [
+          '/functions/v1/delete-account',
+          '/functions/v1/delete-account',
+          '/auth/v1/logout',
+        ]);
+      } else if (scenario == 'concurrent') {
+        await Future.wait([service.deleteAccount(), service.deleteAccount()]);
+        expect(requests, ['/functions/v1/delete-account', '/auth/v1/logout']);
+        expect(client.auth.currentSession, isNull);
+        expect(await storage.hasAccessToken(), isFalse);
+      } else if (scenario == 'rejected' || scenario == 'unexpected') {
         await expectLater(
           service.deleteAccount(),
           throwsA(isA<AuthException>()),

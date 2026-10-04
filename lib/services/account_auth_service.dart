@@ -26,6 +26,7 @@ class SupabaseAccountAuthService implements AccountAuthService {
   final String redirectUrl;
   final LocalStorage _storage;
   final SupabaseClient _client;
+  Future<void>? _deletionInFlight;
 
   static AccountAuthService? configured() => SupabaseConfig.initialized
       ? SupabaseAccountAuthService(
@@ -69,17 +70,36 @@ class SupabaseAccountAuthService implements AccountAuthService {
   }
 
   @override
-  Future<void> deleteAccount() async {
+  Future<void> deleteAccount() => _deletionInFlight ??= _deleteAccount()
+      .whenComplete(() => _deletionInFlight = null);
+
+  static const _ownerDeletionMessage =
+      'TRAINERの組織所有者は退会できません。TRAINERで所有権を移管するか、組織の閉鎖についてお問い合わせください。'
+      '他の利用者の記録を守るため、アカウントと共有情報は変更していません。';
+
+  Future<void> _deleteAccount() async {
     if (_client.auth.currentSession == null) {
       throw const AuthException('ログインし直してからお試しください。');
     }
     try {
       final response = await _client.functions.invoke('delete-account');
+      if (response.data is Map &&
+          response.data['error'] == 'tenant_owner_requires_transfer') {
+        throw const AuthException(_ownerDeletionMessage);
+      }
       if (response.status != 200 ||
           response.data is! Map ||
           response.data['deleted'] != true) {
         throw const AuthException('削除を確認できませんでした。');
       }
+    } on FunctionException catch (error) {
+      if (error.details is Map &&
+          error.details['error'] == 'tenant_owner_requires_transfer') {
+        throw const AuthException(_ownerDeletionMessage);
+      }
+      throw const AuthException('削除の完了を確認できませんでした。接続を確認して再度お試しください。');
+    } on AuthException {
+      rethrow;
     } catch (_) {
       // Never report success or erase the local session on an ambiguous response.
       throw const AuthException('削除の完了を確認できませんでした。接続を確認して再度お試しください。');

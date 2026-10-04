@@ -12936,7 +12936,8 @@ class _CloudAccountPageState extends State<CloudAccountPage> {
         title: const Text('アカウントを削除しますか？'),
         content: Text(
           '${email ?? ''}\n\n'
-          'アカウントとクラウド上のトレーニング記録を削除します。'
+          'アカウントと本人のクラウド上のトレーニング記録、フレンド共有を削除します。'
+          'TRAINER連携は解除します。他の利用者や組織の記録は残ります。'
           'この操作は取り消せません。\n\n'
           'この端末のトレーニング記録は残ります。',
         ),
