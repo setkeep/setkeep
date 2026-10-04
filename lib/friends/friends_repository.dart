@@ -3,10 +3,13 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'dart:typed_data';
 
 import '../profile/profile_preference.dart';
+import 'friend_snapshot_journal.dart';
 
 class FriendsRepository {
-  FriendsRepository(this.client);
+  FriendsRepository(this.client, {FriendSnapshotJournal? journal})
+    : _journal = journal ?? FriendSnapshotJournal();
   final SupabaseClient client;
+  final FriendSnapshotJournal _journal;
   String get userId => client.auth.currentUser!.id;
   bool? _profileInvitesAvailable;
   bool get supportsProfileInvites => _profileInvitesAvailable ?? false;
@@ -131,25 +134,66 @@ class FriendsRepository {
   }
 
   static Future<void> _publication = Future<void>.value();
+  static bool _retryRunning = false;
   Future<void> publish(List<Map<String, dynamic>> records) {
     final owner = userId;
-    final payload = records
-        .where(
-          (r) =>
-              r['trainerOwnerUserId'] == null ||
-              r['trainerOwnerUserId'] == owner,
-        )
-        .map(
-          (r) => {
-            'date': r['date'],
-            'durationSeconds': r['durationSeconds'],
-            'sets': r['sets'],
-          },
-        )
-        .toList();
+    return _publish(owner, records);
+  }
+
+  /// Only pending intents trigger a retry; no periodic feed fetch or publishing
+  /// for another account. The RPC also verifies owner identity at request time.
+  Future<void> retryDeletions() async {
+    final owner = client.auth.currentUser?.id;
+    if (owner == null || _retryRunning) return;
+    _retryRunning = true;
+    try {
+      if ((await _journal.batch(owner)).pending) {
+        await _publish(owner, const [], deletionsOnly: true);
+      }
+    } finally {
+      _retryRunning = false;
+    }
+  }
+
+  Future<void> _publish(
+    String owner,
+    List<Map<String, dynamic>> records, {
+    bool deletionsOnly = false,
+  }) {
     final next = _publication.then((_) async {
       if (client.auth.currentUser?.id != owner) return;
-      await client.rpc('publish_friend_workouts', params: {'records': payload});
+      final batch = await _journal.batch(owner);
+      if (client.auth.currentUser?.id != owner) return;
+      // The saved history wins over an old widget's snapshot. Pending/confirmed
+      // tombstones additionally prevent stale publication from undoing deletion.
+      final payload =
+          (deletionsOnly ? <Map<String, dynamic>>[] : batch.history ?? records)
+              .where(
+                (r) =>
+                    (r['trainerOwnerUserId'] == null ||
+                        r['trainerOwnerUserId'] == owner) &&
+                    !batch.deletions.containsKey(r['date']),
+              )
+              .map(
+                (r) => {
+                  'date': r['date'],
+                  'durationSeconds': r['durationSeconds'],
+                  'sets': r['sets'],
+                },
+              )
+              .toList();
+      await client.rpc(
+        'sync_friend_workouts',
+        params: {
+          'expected_owner': owner,
+          'records': payload,
+          'deleted_client_ids': batch.deletions.keys.toList(),
+          'device_id': batch.deviceId,
+          'revision': batch.revision,
+          'publish_snapshot': !deletionsOnly,
+        },
+      );
+      await _journal.acknowledge(owner, batch.deletions);
     });
     _publication = next.catchError((Object _) {});
     return next;

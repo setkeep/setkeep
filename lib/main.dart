@@ -2,6 +2,7 @@ import 'profile/profile_preference.dart';
 export 'profile/profile_preference.dart';
 import 'friends/friend_avatar.dart';
 import 'friends/friend_invite.dart';
+import 'friends/friend_snapshot_journal.dart';
 import 'activity_speed.dart';
 export 'activity_speed.dart';
 import 'design/setkeep_navigation.dart';
@@ -1077,7 +1078,7 @@ class HomeShell extends StatefulWidget {
 }
 
 class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
-  static const _storageKey = 'workout_history';
+  static const _storageKey = FriendSnapshotJournal.historyKey;
   static const _gymStorageKey = 'selected_gym';
   int _selectedIndex = 0;
   int _friendsRefresh = 0;
@@ -1093,6 +1094,14 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
   bool _trainerSyncRunning = false;
   bool _trainerSyncPending = false;
   Future<void> _historyMutation = Future<void>.value();
+  final _friendJournal = FriendSnapshotJournal();
+  Timer? _friendDeletionRetry;
+  bool _friendForeground = true;
+  String? _lastFriendOwner;
+  String? get _friendOwner => SupabaseConfig.initialized
+      ? Supabase.instance.client.auth.currentUser?.id
+      : null;
+  String? get _friendOwnerAtIntent => _friendOwner ?? _lastFriendOwner;
 
   Future<T> _withHistoryMutation<T>(Future<T> Function() action) {
     final result = _historyMutation.then((_) => action());
@@ -1103,22 +1112,37 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
+    _lastFriendOwner = _friendOwner;
     WidgetsBinding.instance.addObserver(this);
     _historyReady = _loadHistory();
     FriendInviteStore.pending.addListener(_showFriendInvite);
     unawaited(FriendInviteStore.start().then((_) => _showFriendInvite()));
     unawaited(_historyReady.then((_) => _syncTrainerHistory()));
+    unawaited(_retryFriendDeletions());
+    _startFriendDeletionRetry();
     unawaited(_syncTrainingEquipment());
     if (SupabaseConfig.initialized) {
       _trainerAuthSubscription = Supabase.instance.client.auth.onAuthStateChange
           .listen((state) {
+            if (state.event == AuthChangeEvent.tokenRefreshed) {
+              unawaited(_retryFriendDeletions());
+              return;
+            }
             if (state.event == AuthChangeEvent.signedIn ||
                 state.event == AuthChangeEvent.initialSession ||
                 state.event == AuthChangeEvent.signedOut) {
               if (mounted) setState(() {});
+              _startFriendDeletionRetry();
               if (state.session != null) {
+                _lastFriendOwner = state.session!.user.id;
+                unawaited(
+                  _friendJournal
+                      .rememberOwner(state.session!.user.id)
+                      .catchError((Object _) {}),
+                );
                 unawaited(_syncTrainerHistory());
                 unawaited(_syncTrainingEquipment());
+                unawaited(_retryFriendDeletions());
               }
             }
           });
@@ -1127,10 +1151,36 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    _friendForeground = state == AppLifecycleState.resumed;
     if (state == AppLifecycleState.resumed) {
       setState(() => _friendsRefresh++);
       unawaited(_syncTrainerHistory());
       unawaited(_syncTrainingEquipment());
+      unawaited(_retryFriendDeletions());
+      _startFriendDeletionRetry();
+    } else {
+      _friendDeletionRetry?.cancel();
+    }
+  }
+
+  void _startFriendDeletionRetry() {
+    _friendDeletionRetry?.cancel();
+    if (_friendOwner == null || !_friendForeground) return;
+    _friendDeletionRetry = Timer.periodic(const Duration(seconds: 30), (_) {
+      unawaited(_retryFriendDeletions());
+    });
+  }
+
+  Future<void> _retryFriendDeletions() async {
+    try {
+      await _historyReady;
+      if (!mounted || !_friendForeground) return;
+      final owner = _friendOwner;
+      if (owner == null) return;
+      await _friendJournal.rememberOwner(owner);
+      await configuredFriends()?.retryDeletions();
+    } catch (_) {
+      // Durable intents remain until the same account can retry successfully.
     }
   }
 
@@ -1139,6 +1189,7 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
     FriendInviteStore.pending.removeListener(_showFriendInvite);
     WidgetsBinding.instance.removeObserver(this);
     _trainerAuthSubscription?.cancel();
+    _friendDeletionRetry?.cancel();
     super.dispose();
   }
 
@@ -1222,7 +1273,7 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
         );
         if (!mounted || client.auth.currentUser?.id != userId) return;
         final updated = reconcileTrainerWorkouts(_history, rows, userId);
-        await _persistHistory(updated);
+        await _persistHistory(updated, owner: userId);
         if (mounted && client.auth.currentUser?.id == userId) {
           setState(() => _history = updated);
         }
@@ -1239,11 +1290,15 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
   }
 
   Future<void> _loadHistory() async {
+    final owner = _friendOwner;
+    if (owner != null) await _friendJournal.rememberOwner(owner);
+    final rememberedOwner = await _friendJournal.lastOwner();
+    _lastFriendOwner ??= rememberedOwner;
+    final encoded = await _friendJournal.recoverHistory();
     final preferences = await SharedPreferences.getInstance();
     final workoutTemplates = await WorkoutTemplatePreference.load();
     final bodyWeights = await BodyWeightPreference.load();
     await CustomGymPreference.load();
-    final encoded = preferences.getString(_storageKey);
     final selectedGym = preferences.getString(_gymStorageKey);
     if (selectedGym != null &&
         !standardGyms.contains(selectedGym) &&
@@ -1304,35 +1359,38 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
     await WorkoutTemplatePreference.save(updated);
   }
 
-  Future<void> _saveWorkout(WorkoutRecord workout) =>
-      _withHistoryMutation(() async {
-        if (workout.trainerWorkoutId != null) {
-          await _trainerRecordRepository(workout)
-              .restoreRecordedWorkout(workout.trainerWorkoutId!);
-        }
-        final updated = sortWorkoutsNewestFirst([
-          workout,
-          ..._history.where((w) => !_sameWorkout(w, workout)),
-        ]);
-        await _persistHistory(updated);
-        if (mounted) setState(() => _history = updated);
-        unawaited(_syncHistory(updated));
-      });
+  Future<void> _saveWorkout(WorkoutRecord workout) {
+    final owner = _friendOwnerAtIntent;
+    return _withHistoryMutation(() async {
+      if (workout.trainerWorkoutId != null) {
+        await _trainerRecordRepository(workout)
+            .restoreRecordedWorkout(workout.trainerWorkoutId!);
+      }
+      final updated = sortWorkoutsNewestFirst([
+        workout,
+        ..._history.where((w) => !_sameWorkout(w, workout)),
+      ]);
+      await _persistHistory(updated, owner: owner);
+      if (mounted) setState(() => _history = updated);
+      unawaited(_syncHistory(updated));
+    });
+  }
 
-  Future<void> _persistHistory(List<WorkoutRecord> history) async {
-    final preferences = await SharedPreferences.getInstance();
-    final saved = await preferences.setString(
-      _storageKey,
-      jsonEncode(history.map((item) => item.toJson()).toList()),
+  Future<void> _persistHistory(
+    List<WorkoutRecord> history, {
+    required String? owner,
+  }) async {
+    await _friendJournal.saveHistory(
+      history.map((item) => item.toJson()).toList(),
+      expectedOwner: owner,
     );
-    if (!saved) throw StateError('Workout history could not be saved');
-    final friends = configuredFriends();
+    final friends = owner == _friendOwner ? configuredFriends() : null;
     if (friends != null) {
       unawaited(
         friends.publish(history.map((w) => w.toJson()).toList()).catchError((
           Object _,
         ) {
-          /* Retry from Friends & privacy on reconnect. */
+          /* Durable deletions retry on resume, login and while foregrounded. */
         }),
       );
     }
@@ -1360,22 +1418,24 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
     if (mounted) setState(() => _bodyWeights = updated);
   }
 
-  Future<void> _replaceWorkout(WorkoutRecord original, WorkoutRecord workout) =>
-      _withHistoryMutation(() async {
-        if (original.trainerWorkoutId != null) {
-          await _trainerRecordRepository(original).updateRecordedWorkout(
-            original.trainerWorkoutId!,
-            workout.sets.map((s) => s.toJson()).toList(),
-          );
-        }
-        final updated = sortWorkoutsNewestFirst([
-          if (workout.sets.isNotEmpty) workout,
-          ..._history.where((item) => !_sameWorkout(item, original)),
-        ]);
-        await _persistHistory(updated);
-        if (mounted) setState(() => _history = updated);
-        unawaited(_syncHistory(updated));
-      });
+  Future<void> _replaceWorkout(WorkoutRecord original, WorkoutRecord workout) {
+    final owner = _friendOwnerAtIntent;
+    return _withHistoryMutation(() async {
+      if (original.trainerWorkoutId != null) {
+        await _trainerRecordRepository(original).updateRecordedWorkout(
+          original.trainerWorkoutId!,
+          workout.sets.map((s) => s.toJson()).toList(),
+        );
+      }
+      final updated = sortWorkoutsNewestFirst([
+        if (workout.sets.isNotEmpty) workout,
+        ..._history.where((item) => !_sameWorkout(item, original)),
+      ]);
+      await _persistHistory(updated, owner: owner);
+      if (mounted) setState(() => _history = updated);
+      unawaited(_syncHistory(updated));
+    });
+  }
 
   TrainerRepository _trainerRecordRepository(WorkoutRecord workout) {
     if (!SupabaseConfig.initialized ||
@@ -1386,32 +1446,35 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
     return TrainerRepository(Supabase.instance.client);
   }
 
-  Future<bool> _deleteWorkout(WorkoutRecord workout) =>
-      _withHistoryMutation(() async {
-        try {
-          if (workout.trainerWorkoutId != null) {
-            await _trainerRecordRepository(workout)
-                .deleteRecordedWorkout(workout.trainerWorkoutId!);
-          } else if (SupabaseSyncService.canUseCloud) {
-            await SupabaseSyncService.deleteWorkout(
-              workout.date.toIso8601String(),
-            );
-          }
-          final updated = _history
-              .where((item) => !_sameWorkout(item, workout))
-              .toList();
-          await _persistHistory(updated);
-          if (mounted) setState(() => _history = updated);
-          return true;
-        } catch (error) {
-          debugPrint('Workout delete failed: $error');
-          return false;
+  Future<bool> _deleteWorkout(WorkoutRecord workout) {
+    final owner = _friendOwnerAtIntent;
+    return _withHistoryMutation(() async {
+      try {
+        if (workout.trainerWorkoutId != null) {
+          await _trainerRecordRepository(workout)
+              .deleteRecordedWorkout(workout.trainerWorkoutId!);
+        } else if (SupabaseSyncService.canUseCloud) {
+          await SupabaseSyncService.deleteWorkout(
+            workout.date.toIso8601String(),
+          );
         }
-      });
+        final updated = _history
+            .where((item) => !_sameWorkout(item, workout))
+            .toList();
+        await _persistHistory(updated, owner: owner);
+        if (mounted) setState(() => _history = updated);
+        return true;
+      } catch (error) {
+        debugPrint('Workout delete failed: $error');
+        return false;
+      }
+    });
+  }
 
   Future<int> _importWorkouts(
     List<WorkoutRecord> imported,
   ) => _withHistoryMutation(() async {
+    final owner = _friendOwner;
     final merged = <String, WorkoutRecord>{
       for (final workout in _history.where((w) => w.trainerWorkoutId == null))
         workout.date.toIso8601String(): workout,
@@ -1429,8 +1492,8 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
       ...trainerRecords.values,
     ]);
     final addedCount = updated.length - _history.length;
+    await _persistHistory(updated, owner: owner);
     setState(() => _history = updated);
-    await _persistHistory(updated);
     unawaited(_syncHistory(updated));
     return addedCount;
   });
