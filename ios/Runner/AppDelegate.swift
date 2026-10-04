@@ -7,11 +7,15 @@ import UserNotifications
 
 @main
 @objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate {
+  private let restNotifications = RestTimerNotifications(center: UNUserNotificationCenter.current())
+  private lazy var watchBridge = PhoneWatchBridge(display: .shared, notifications: restNotifications)
+
   override func application(
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
   ) -> Bool {
     UNUserNotificationCenter.current().delegate = self
+    watchBridge.start()
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
   }
 
@@ -49,7 +53,8 @@ import UserNotifications
     )
     RestCompletionFeedback.prepareSound()
     let feedback = RestCompletionFeedback()
-    let notifications = RestTimerNotifications(center: UNUserNotificationCenter.current())
+    let notifications = restNotifications
+    watchBridge.attach(channel)
     channel.setMethodCallHandler { call, result in
       #if targetEnvironment(simulator)
       if call.method == "debugStatus" {
