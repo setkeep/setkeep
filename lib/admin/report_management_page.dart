@@ -11,7 +11,8 @@ import '../gym/gym_pages.dart';
 
 /// Visibility is only a convenience; every read/write is authorized by the DB.
 class ReportAdminEntry extends StatefulWidget {
-  const ReportAdminEntry({super.key});
+  const ReportAdminEntry({super.key, this.embedded = false});
+  final bool embedded;
   @override
   State<ReportAdminEntry> createState() => _ReportAdminEntryState();
 }
@@ -48,24 +49,26 @@ class _ReportAdminEntryState extends State<ReportAdminEntry> {
   }
 
   @override
-  Widget build(BuildContext context) => !admin
-      ? const SizedBox.shrink()
-      : Card(
-          child: ListTile(
-            key: const Key('reportAdminEntry'),
-            leading: const Icon(Icons.admin_panel_settings_outlined),
-            title: const Text('報告管理'),
-            subtitle: const Text('管理者専用'),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () async {
-              await Navigator.push<void>(
-                context,
-                MaterialPageRoute(builder: (_) => const ReportManagementPage()),
-              );
-              refresh();
-            },
-          ),
+  Widget build(BuildContext context) {
+    if (!admin) return const SizedBox.shrink();
+    final tile = ListTile(
+      key: const Key('reportAdminEntry'),
+      leading: const Icon(Icons.admin_panel_settings_outlined),
+      title: const Text('報告管理'),
+      subtitle: const Text('管理者専用'),
+      trailing: const Icon(Icons.chevron_right),
+      onTap: () async {
+        await Navigator.push<void>(
+          context,
+          MaterialPageRoute(builder: (_) => const ReportManagementPage()),
         );
+        refresh();
+      },
+    );
+    return widget.embedded
+        ? Column(children: [const Divider(height: 1, thickness: 0.5), tile])
+        : Card(child: tile);
+  }
 }
 
 class ReportManagementPage extends StatefulWidget {

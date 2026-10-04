@@ -1,25 +1,132 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'dart:typed_data';
+
+import '../profile/profile_preference.dart';
+
 class FriendsRepository {
   FriendsRepository(this.client);
   final SupabaseClient client;
   String get userId => client.auth.currentUser!.id;
+  bool? _profileInvitesAvailable;
+  bool get supportsProfileInvites => _profileInvitesAvailable ?? false;
 
-  Future<Map<String, dynamic>?> profile() async => await client
-      .from('friend_profiles')
-      .select()
-      .eq('user_id', userId)
-      .maybeSingle();
+  Future<Map<String, dynamic>?> profile() async {
+    final result = await client
+        .from('friend_profiles')
+        .select()
+        .eq('user_id', userId)
+        .maybeSingle();
+    // SELECT * works with the already deployed MVP schema. No probe of a
+    // missing column/RPC and no production migration is needed for this build.
+    _profileInvitesAvailable = result?.containsKey('avatar_path') ?? false;
+    return result;
+  }
+
   Future<void> saveProfile(String name, String visibility) async {
+    final owner = userId;
     final existing = await profile();
+    if (client.auth.currentUser?.id != owner) {
+      throw StateError('Account changed');
+    }
     final values = {'display_name': name.trim(), 'visibility': visibility};
     if (existing == null) {
       await client.from('friend_profiles').insert({
-        'user_id': userId,
+        'user_id': owner,
         ...values,
       });
     } else {
-      await client.from('friend_profiles').update(values).eq('user_id', userId);
+      await client.from('friend_profiles').update(values).eq('user_id', owner);
+    }
+  }
+
+  /// Name synchronization never changes the existing sharing choice.
+  Future<Map<String, dynamic>> ensureProfile(String name) async {
+    final owner = userId;
+    final displayName = ProfilePreference.socialName(name);
+    var existing = await profile();
+    if (client.auth.currentUser?.id != owner) {
+      throw StateError('Account changed');
+    }
+    if (existing == null) {
+      try {
+        await client.from('friend_profiles').insert({
+          'user_id': owner,
+          'display_name': displayName,
+        });
+      } on PostgrestException catch (e) {
+        if (e.code != '23505') rethrow; // Another device may have created it.
+      }
+      existing = await profile();
+    }
+    if (existing == null) throw StateError('Profile unavailable');
+    if (client.auth.currentUser?.id != owner) {
+      throw StateError('Account changed');
+    }
+    if (existing['display_name'] != displayName) {
+      await client
+          .from('friend_profiles')
+          .update({'display_name': displayName})
+          .eq('user_id', owner);
+    }
+    return {...existing, 'display_name': displayName};
+  }
+
+  Future<Map<String, dynamic>> invitePreview(String code) async =>
+      Map<String, dynamic>.from(
+        await client.rpc('lookup_friend_invite', params: {'code': code}),
+      );
+
+  Future<String> avatarUrl(String path) =>
+      client.storage.from('friend-avatars').createSignedUrl(path, 60);
+
+  Future<void> setAvatar(Uint8List? photo, {String? expectedOwner}) async {
+    final owner = expectedOwner ?? userId;
+    if (client.auth.currentUser?.id != owner) {
+      throw StateError('Account changed');
+    }
+    final previous = (await profile())?['avatar_path'] as String?;
+    if (client.auth.currentUser?.id != owner) {
+      throw StateError('Account changed');
+    }
+    if (!supportsProfileInvites) throw StateError('Profile photos unavailable');
+    String? path;
+    if (photo != null) {
+      if (photo.isEmpty || photo.length > 512 * 1024) {
+        throw ArgumentError('Photo size');
+      }
+      path = '$owner/${DateTime.now().microsecondsSinceEpoch}.png';
+      await client.storage
+          .from('friend-avatars')
+          .uploadBinary(
+            path,
+            photo,
+            fileOptions: const FileOptions(
+              contentType: 'image/png',
+              upsert: false,
+            ),
+          );
+    }
+    try {
+      if (client.auth.currentUser?.id != owner) {
+        throw StateError('Account changed');
+      }
+      await client
+          .from('friend_profiles')
+          .update({'avatar_path': path})
+          .eq('user_id', owner);
+    } catch (_) {
+      if (path != null) {
+        try {
+          await client.storage.from('friend-avatars').remove([path]);
+        } catch (_) {}
+      }
+      rethrow;
+    }
+    if (previous != null && previous != path) {
+      try {
+        await client.storage.from('friend-avatars').remove([previous]);
+      } catch (_) {}
     }
   }
 
@@ -48,10 +155,17 @@ class FriendsRepository {
     return next;
   }
 
-  Future<List<Map<String, dynamic>>> connections() async =>
-      List<Map<String, dynamic>>.from(
-        await client.rpc('list_friend_connections'),
-      );
+  Future<List<Map<String, dynamic>>> connections() async {
+    if (_profileInvitesAvailable == null) await profile();
+    return List<Map<String, dynamic>>.from(
+      await client.rpc(
+        supportsProfileInvites
+            ? 'list_friend_connections_with_avatar'
+            : 'list_friend_connections',
+      ),
+    );
+  }
+
   Future<void> request(String code) async {
     await client.rpc('request_friend', params: {'code': code.trim()});
   }
@@ -65,14 +179,45 @@ class FriendsRepository {
   }
 
   Future<List<Map<String, dynamic>>> feed({String? owner}) async {
-    final query = client
-        .from('friend_workouts')
-        .select(
-          '*, friend_profiles!inner(display_name), friend_likes(user_id), friend_comments(id)',
-        );
-    return await (owner == null
-            ? query.neq('user_id', userId)
-            : query.eq('user_id', owner))
+    if (_profileInvitesAvailable == null) await profile();
+    final fields =
+        '*, friend_profiles!inner(display_name${supportsProfileInvites ? ', avatar_path' : ''}), friend_likes(user_id), friend_comments(id)';
+    if (owner == null && supportsProfileInvites) {
+      return await client
+          .rpc('latest_friend_workouts')
+          .select(fields)
+          .order('performed_at', ascending: false);
+    }
+    if (owner == null) {
+      // Fetch one session per accepted friend. A prolific friend cannot crowd
+      // another friend's latest session out of the server's global row limit.
+      final items = await connections();
+      final owners = items
+          .where((row) => row['status'] == 'accepted')
+          .map(
+            (row) =>
+                (row['requester'] == userId
+                        ? row['recipient']
+                        : row['requester'])
+                    as String,
+          )
+          .toSet();
+      final results = await Future.wait(
+        owners.map(
+          (id) => client
+              .from('friend_workouts')
+              .select(fields)
+              .eq('user_id', id)
+              .order('performed_at', ascending: false)
+              .order('id', ascending: false)
+              .limit(1),
+        ),
+      );
+      return results.expand((rows) => rows).toList();
+    }
+    final query = client.from('friend_workouts').select(fields);
+    return await query
+        .eq('user_id', owner)
         .order('performed_at', ascending: false)
         .limit(1000);
   }

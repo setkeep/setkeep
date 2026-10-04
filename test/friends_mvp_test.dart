@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:setkeep/friends/friends_repository.dart';
@@ -30,6 +31,9 @@ class FakeFriends extends FriendsRepository {
     'visibility': private ? 'private' : 'friends',
     'invite_code': 'code',
   };
+  @override
+  Future<Map<String, dynamic>> ensureProfile(String name) async =>
+      (await profile())!;
   @override
   Future<void> saveProfile(String name, String visibility) async {
     private = visibility == 'private';
@@ -97,6 +101,7 @@ class FakeFriends extends FriendsRepository {
 }
 
 void main() {
+  setUp(() => SharedPreferences.setMockInitialValues({}));
   testWidgets(
     'feed opens read-only detail, toggles one like, comments, clears on revoked access',
     (t) async {
@@ -128,7 +133,7 @@ void main() {
       await t.pumpAndSettle();
       expect(find.text('Nice!'), findsNothing);
       repo.fail = true;
-      await t.tap(find.byIcon(Icons.refresh).last);
+      t.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
       await t.pumpAndSettle();
       expect(find.text('ベンチプレス'), findsNothing);
       expect(find.text('Nice!'), findsNothing);
@@ -150,6 +155,10 @@ void main() {
       await t.ensureVisible(find.byTooltip('Accept'));
       await t.tap(find.byTooltip('Accept'));
       await t.pumpAndSettle();
+      expect(repo.accepted, false);
+      await t.tap(find.byKey(const Key('connectWithoutSharing')));
+      await t.pumpAndSettle();
+      expect(repo.private, true);
       expect(repo.accepted, true);
       expect(find.byTooltip('Accept'), findsNothing);
       await t.tap(find.byTooltip('Remove / cancel'));

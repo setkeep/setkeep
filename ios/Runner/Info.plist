@@ -50,7 +50,7 @@
 	<key>NSCameraUsageDescription</key>
 	<string>Trainerの招待QRコードを読み取るためにカメラを使用します。</string>
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>SNS共有用の画像に使用する写真を選ぶため、写真ライブラリへアクセスします。</string>
+	<string>プロフィール写真やSNS共有用の写真を選ぶため、写真ライブラリへアクセスします。</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>作成したトレーニング画像を写真ライブラリへ保存します。</string>
 	<key>UIApplicationSceneManifest</key>

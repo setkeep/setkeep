@@ -36,6 +36,59 @@ Future<void> enterMetric(WidgetTester tester, String key, String value) async {
 }
 
 void main() {
+  test('average km/h handles decimals, missing values and legacy pace', () {
+    expect(activitySpeedKmh(durationSeconds: 1800, distanceKm: 2.75), 5.5);
+    expect(activitySpeedKmh(durationSeconds: 0, distanceKm: 2), 0);
+    expect(activitySpeedKmh(durationSeconds: 60, distanceKm: 0), 0);
+    expect(activitySpeedKmh(durationSeconds: 0, distanceKm: double.nan), 0);
+    expect(
+      activitySpeedKmh(durationSeconds: 60, distanceKm: 0, speedKmh: 6.5),
+      6.5,
+    );
+    expect(
+      activitySpeedKmh(
+        durationSeconds: 0,
+        distanceKm: 0,
+        paceSecondsPerKm: 600,
+      ),
+      6,
+    );
+    final legacy = cardio(durationSeconds: 1800, distanceKm: 2.75).toJson()
+      ..['paceSecondsPerKm'] = 600;
+    final restored = RecordedSet.fromJson(legacy);
+    expect(restored.activitySummary, contains('5.5 km/h'));
+    expect(restored.activitySummary, isNot(contains('/km')));
+    expect(restored.toJson()['paceSecondsPerKm'], 600);
+  });
+
+  testWidgets('time and distance recalculate average speed through save', (
+    tester,
+  ) async {
+    WorkoutRecord? saved;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: WorkoutPage(
+          isEditing: true,
+          history: const [],
+          initialWorkout: WorkoutRecord(
+            date: DateTime(2026, 10, 1),
+            sets: [cardio()],
+          ),
+          onSave: (record) async => saved = record,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await enterMetric(tester, 'durationField0_', '30');
+    await enterMetric(tester, 'distanceField0_', '2.75');
+    expect(find.text('平均速度（km/h・自動）'), findsOneWidget);
+    expect(find.text('ペース（分/km）'), findsNothing);
+    await enterMetric(tester, 'durationField0_', '15');
+    await tester.tap(find.byKey(const Key('completeWorkoutButton')));
+    await tester.pumpAndSettle();
+    expect(saved?.sets.single.speedKmh, 11);
+    expect(saved?.sets.single.distanceKm, 2.75);
+  });
   setUp(() {
     SharedPreferences.setMockInitialValues({
       'completion_check_enabled': true,

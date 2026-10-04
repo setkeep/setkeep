@@ -44,6 +44,12 @@
                 <data android:scheme="setkeep" android:host="login-callback" />
                 <data android:scheme="musclemory" android:host="login-callback" />
             </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="setkeep" android:host="friend-invite" />
+            </intent-filter>
         </activity>
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->

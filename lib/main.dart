@@ -1,10 +1,18 @@
+import 'profile/profile_preference.dart';
+export 'profile/profile_preference.dart';
+import 'friends/friend_avatar.dart';
+import 'friends/friend_invite.dart';
+import 'activity_speed.dart';
+export 'activity_speed.dart';
+import 'design/setkeep_navigation.dart';
 import 'sharing/share_photo_frame.dart';
 import 'friends/friends_ui.dart';
 import 'ads/ads_config.dart';
 import 'ads/setkeep_banner_ad.dart';
 import 'ads/workout_interstitial.dart';
-import 'trainer/trainer_inbox_page.dart';
 import 'trainer/trainer_inbox_repository.dart';
+import 'friends/friend_comment_inbox.dart';
+import 'friends/notification_sources_page.dart';
 import 'design/family_theme.dart';
 import 'admin/report_management_page.dart';
 import 'gym/place_equipment_pages.dart';
@@ -361,25 +369,6 @@ class RestTimerPreference {
   }
 }
 
-class ProfilePreference {
-  ProfilePreference._();
-
-  static const _displayNameKey = 'profile_display_name';
-  static const defaultDisplayName = 'SETKEEPユーザー';
-
-  static Future<String> load() async {
-    final preferences = await SharedPreferences.getInstance();
-    return (preferences.getString(_displayNameKey) ?? '').trim();
-  }
-
-  static Future<void> setDisplayName(String value) async {
-    final preferences = await SharedPreferences.getInstance();
-    if (!await preferences.setString(_displayNameKey, value.trim())) {
-      throw StateError('Display name could not be saved');
-    }
-  }
-}
-
 class WorkoutUiPreference {
   WorkoutUiPreference._();
 
@@ -446,11 +435,14 @@ class SetkeepApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: appDisplayName,
-      builder: (context, child) => AdsScope(
-        config: const AdsConfig(generalApp: true),
-        entitlement: setkeepAdsEntitlement,
-        child: child!,
-      ),
+      builder: (context, child) {
+        unawaited(FriendInviteStore.start());
+        return AdsScope(
+          config: const AdsConfig(generalApp: true),
+          entitlement: setkeepAdsEntitlement,
+          child: child!,
+        );
+      },
       debugShowCheckedModeBanner: false,
       locale: const Locale('ja', 'JP'),
       localizationsDelegates: GlobalMaterialLocalizations.delegates,
@@ -1088,6 +1080,8 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
   static const _storageKey = 'workout_history';
   static const _gymStorageKey = 'selected_gym';
   int _selectedIndex = 0;
+  int _friendsRefresh = 0;
+  bool _openingFriendInvite = false;
   List<WorkoutRecord> _history = [];
   bool _historyLoaded = false;
   List<BodyWeightEntry> _bodyWeights = [];
@@ -1111,6 +1105,8 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _historyReady = _loadHistory();
+    FriendInviteStore.pending.addListener(_showFriendInvite);
+    unawaited(FriendInviteStore.start().then((_) => _showFriendInvite()));
     unawaited(_historyReady.then((_) => _syncTrainerHistory()));
     unawaited(_syncTrainingEquipment());
     if (SupabaseConfig.initialized) {
@@ -1132,6 +1128,7 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
+      setState(() => _friendsRefresh++);
       unawaited(_syncTrainerHistory());
       unawaited(_syncTrainingEquipment());
     }
@@ -1139,9 +1136,46 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
 
   @override
   void dispose() {
+    FriendInviteStore.pending.removeListener(_showFriendInvite);
     WidgetsBinding.instance.removeObserver(this);
     _trainerAuthSubscription?.cancel();
     super.dispose();
+  }
+
+  void _showFriendInvite() {
+    final code = FriendInviteStore.pending.value;
+    if (code == null ||
+        _openingFriendInvite ||
+        !mounted ||
+        configuredFriends() == null) {
+      return;
+    }
+    _openingFriendInvite = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      try {
+        await _historyReady;
+        if (!mounted) return;
+        final repo = configuredFriends();
+        if (repo == null) return;
+        await FriendInviteStore.consume(code);
+        if (!mounted) return;
+        await Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => FriendsSettingsPage(
+              repository: repo,
+              history: _visibleHistory,
+              initialInvite: code,
+            ),
+          ),
+        );
+        if (mounted) setState(() => _friendsRefresh++);
+      } finally {
+        _openingFriendInvite = false;
+        if (mounted && FriendInviteStore.pending.value != null) {
+          _showFriendInvite();
+        }
+      }
+    });
   }
 
   List<WorkoutRecord> get _visibleHistory {
@@ -1295,9 +1329,11 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
     final friends = configuredFriends();
     if (friends != null) {
       unawaited(
-        friends.publish(history.map((w) => w.toJson()).toList()).catchError(
-          (Object _) { /* Retry from Friends & privacy on reconnect. */ },
-        ),
+        friends.publish(history.map((w) => w.toJson()).toList()).catchError((
+          Object _,
+        ) {
+          /* Retry from Friends & privacy on reconnect. */
+        }),
       );
     }
     unawaited(
@@ -1538,6 +1574,7 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
       DashboardPage(
         history: _visibleHistory,
         friendsHistoryReady: _historyLoaded,
+        friendsRefresh: _friendsRefresh,
         bodyWeights: _bodyWeights,
         selectedGym: _selectedGym,
         onGymChanged: _saveGym,
@@ -1595,37 +1632,15 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
           if (_selectedIndex == 0) const SetkeepBannerAd(),
         ],
       ),
-      bottomNavigationBar: NavigationBar(
+      bottomNavigationBar: SetkeepNavigation(
         selectedIndex: _selectedIndex,
-        height: 72,
-        backgroundColor: Colors.white,
-        indicatorColor: AppColors.primaryGreen,
-        onDestinationSelected: (index) {
+        onSelected: (index) {
           setState(() => _selectedIndex = index);
-          if (index == 0) unawaited(_refreshWorkoutDraft());
+          if (index == 0) {
+            setState(() => _friendsRefresh++);
+            unawaited(_refreshWorkoutDraft());
+          }
         },
-        destinations: const [
-          NavigationDestination(
-            icon: Icon(Icons.home_outlined),
-            selectedIcon: Icon(Icons.home_rounded),
-            label: 'ホーム',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.calendar_month_outlined),
-            selectedIcon: Icon(Icons.calendar_month_rounded),
-            label: '履歴',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.accessibility_new_outlined),
-            selectedIcon: Icon(Icons.accessibility_new_rounded),
-            label: '部位',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.person_outline_rounded),
-            selectedIcon: Icon(Icons.person_rounded),
-            label: 'マイページ',
-          ),
-        ],
       ),
     );
   }
@@ -1651,6 +1666,7 @@ class DashboardPage extends StatelessWidget {
     required this.onDraftDiscarded,
     this.inboxRepository,
     this.friendsHistoryReady = true,
+    this.friendsRefresh = 0,
   });
 
   final List<WorkoutRecord> history;
@@ -1670,62 +1686,71 @@ class DashboardPage extends StatelessWidget {
   final Future<void> Function() onDraftDiscarded;
   final TrainerInboxRepository? inboxRepository;
   final bool friendsHistoryReady;
+  final int friendsRefresh;
 
   @override
   Widget build(BuildContext context) {
     return SafeArea(
       bottom: false,
-      child: ListView(
-        padding: const EdgeInsets.fromLTRB(20, 18, 20, 32),
-        children: [
-          HomeHeader(
-            repository: inboxRepository,
-            onStart: (record) => _startWorkout(context, initialWorkout: record),
-          ),
-          const SizedBox(height: 24),
-          if (workoutDraft != null) ...[
-            ActiveWorkoutDraftCard(
-              summary: workoutDraft!,
-              onResume: () => _openWorkout(context, resumeDraft: true),
+      child: RefreshIndicator(
+        onRefresh: () => FriendsRefresh.refresh(),
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.fromLTRB(20, 18, 20, 32),
+          children: [
+            HomeHeader(
+              repository: inboxRepository,
+              onStart: (record) =>
+                  _startWorkout(context, initialWorkout: record),
+            ),
+            const SizedBox(height: 24),
+            if (workoutDraft != null) ...[
+              ActiveWorkoutDraftCard(
+                summary: workoutDraft!,
+                onResume: () => _openWorkout(context, resumeDraft: true),
+              ),
+              const SizedBox(height: 14),
+            ],
+            StartWorkoutCard(
+              buttonLabel: workoutDraft == null
+                  ? 'トレーニングを始める'
+                  : '新しいトレーニングを始める',
+              onPressed: () async {
+                await _startWorkout(context);
+              },
             ),
             const SizedBox(height: 14),
-          ],
-          StartWorkoutCard(
-            buttonLabel: workoutDraft == null ? 'トレーニングを始める' : '新しいトレーニングを始める',
-            onPressed: () async {
-              await _startWorkout(context);
-            },
-          ),
-          const SizedBox(height: 14),
-          if (workoutTemplates.isNotEmpty) ...[
-            const SizedBox(height: 24),
-            const SectionTitle(title: 'マイメニュー', action: '保存したメニュー'),
-            const SizedBox(height: 12),
-            SavedMenusCard(
-              templates: workoutTemplates,
-              onSelected: (template) => _startWorkout(
-                context,
-                initialWorkout: template.toWorkoutRecord(),
+            if (workoutTemplates.isNotEmpty) ...[
+              const SizedBox(height: 24),
+              const SectionTitle(title: 'マイメニュー', action: '保存したメニュー'),
+              const SizedBox(height: 12),
+              SavedMenusCard(
+                templates: workoutTemplates,
+                onSelected: (template) => _startWorkout(
+                  context,
+                  initialWorkout: template.toWorkoutRecord(),
+                ),
+                onDeleted: onTemplateDeleted,
+                onRestored: onTemplateSaved,
               ),
-              onDeleted: onTemplateDeleted,
-              onRestored: onTemplateSaved,
-            ),
-          ],
-          if (onBodyWeightSaved != null) ...[
+            ],
+            if (onBodyWeightSaved != null) ...[
+              const SizedBox(height: 24),
+              BodyWeightTrendSection(
+                entries: bodyWeights,
+                onSaved: onBodyWeightSaved!,
+                onDeleted: onBodyWeightDeleted,
+              ),
+            ],
             const SizedBox(height: 24),
-            BodyWeightTrendSection(
-              entries: bodyWeights,
-              onSaved: onBodyWeightSaved!,
-              onDeleted: onBodyWeightDeleted,
+            FriendsSection(
+              key: ValueKey(configuredFriends()?.userId),
+              history: history,
+              historyReady: friendsHistoryReady,
+              refreshToken: friendsRefresh,
             ),
           ],
-          const SizedBox(height: 24),
-          FriendsSection(
-            key: ValueKey(configuredFriends()?.userId),
-            history: history,
-            historyReady: friendsHistoryReady,
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -2380,16 +2405,28 @@ class _RenameWorkoutTemplateDialogState
 }
 
 class HomeHeader extends StatefulWidget {
-  const HomeHeader({super.key, required this.onStart, this.repository});
+  const HomeHeader({
+    super.key,
+    required this.onStart,
+    this.repository,
+    this.friendRepository,
+  });
 
   final Future<void> Function(WorkoutRecord) onStart;
   final TrainerInboxRepository? repository;
+  final FriendCommentInboxRepository? friendRepository;
 
   @override
   State<HomeHeader> createState() => _HomeHeaderState();
 }
 
 class _HomeHeaderState extends State<HomeHeader> with WidgetsBindingObserver {
+  FriendCommentInboxRepository? get _friends {
+    if (widget.friendRepository != null) return widget.friendRepository;
+    final repo = configuredFriends();
+    return repo == null ? null : FriendCommentInboxRepository(repo);
+  }
+
   late final TrainerInboxRepository? _repository =
       widget.repository ??
       (SupabaseConfig.initialized
@@ -2398,6 +2435,7 @@ class _HomeHeaderState extends State<HomeHeader> with WidgetsBindingObserver {
   StreamSubscription<void>? _authSubscription;
   Timer? _refreshTimer;
   int _unreadCount = 0;
+  int _friendUnreadCount = 0;
   int _generation = 0;
   bool _active = true;
 
@@ -2405,9 +2443,13 @@ class _HomeHeaderState extends State<HomeHeader> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    FriendsRefresh.listen(_refresh);
     if (_repository != null) {
       _authSubscription = _repository.authChanges.listen((_) {
-        setState(() => _unreadCount = 0);
+        setState(() {
+          _unreadCount = 0;
+          _friendUnreadCount = 0;
+        });
         unawaited(_refresh());
       });
       _refreshTimer = Timer.periodic(const Duration(seconds: 30), (_) {
@@ -2425,26 +2467,44 @@ class _HomeHeaderState extends State<HomeHeader> with WidgetsBindingObserver {
 
   Future<void> _refresh() async {
     final current = ++_generation;
-    final uid = _repository?.userId;
+    final uid = _repository?.userId ?? _friends?.userId;
     if (uid == null) {
-      if (mounted) setState(() => _unreadCount = 0);
+      if (mounted) {
+        setState(() {
+          _unreadCount = 0;
+          _friendUnreadCount = 0;
+        });
+      }
       return;
     }
     try {
-      final count = await _repository!.unreadCount();
-      if (mounted && current == _generation && _repository.userId == uid) {
+      final count = await _repository?.unreadCount() ?? 0;
+      if (mounted &&
+          current == _generation &&
+          (_repository?.userId ?? _friends?.userId) == uid) {
         setState(() => _unreadCount = count);
       }
     } catch (_) {
       // A transient network error must not mark notifications as read.
+    }
+    try {
+      final count = await _friends?.unreadCount() ?? 0;
+      if (mounted &&
+          current == _generation &&
+          (_repository?.userId ?? _friends?.userId) == uid) {
+        setState(() => _friendUnreadCount = count);
+      }
+    } catch (_) {
+      /* Keep the last count on a transient failure. */
     }
   }
 
   Future<void> _openInbox() async {
     await Navigator.of(context).push<void>(
       MaterialPageRoute(
-        builder: (_) => TrainerInboxPage(
-          repository: _repository,
+        builder: (_) => NotificationSourcesPage(
+          trainer: _repository,
+          friends: _friends,
           onStart: widget.onStart,
           onReadChanged: () => unawaited(_refresh()),
         ),
@@ -2459,6 +2519,7 @@ class _HomeHeaderState extends State<HomeHeader> with WidgetsBindingObserver {
     _refreshTimer?.cancel();
     _authSubscription?.cancel();
     WidgetsBinding.instance.removeObserver(this);
+    FriendsRefresh.unlisten(_refresh);
     super.dispose();
   }
 
@@ -2467,19 +2528,16 @@ class _HomeHeaderState extends State<HomeHeader> with WidgetsBindingObserver {
     return Row(
       children: [
         Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                appDisplayName,
-                style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                  fontSize: 26,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: 2.1,
-                  color: const Color(0xFF101820),
-                ),
-              ),
-            ],
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: Image.asset(
+              'assets/brand/setkeep_splash_lockup_source.png',
+              key: const Key('homeBrandLogo'),
+              width: 90,
+              height: 46,
+              fit: BoxFit.contain,
+              semanticLabel: appDisplayName,
+            ),
           ),
         ),
         Container(
@@ -2495,12 +2553,12 @@ class _HomeHeaderState extends State<HomeHeader> with WidgetsBindingObserver {
               IconButton(
                 key: const Key('trainerInboxBell'),
                 tooltip: Localizations.localeOf(context).languageCode == 'ja'
-                    ? 'トレーナーからのメニュー・コメント'
-                    : 'Trainer menus and comments',
+                    ? 'フレンド・トレーナーからの通知'
+                    : 'Notifications from friends and your trainer',
                 onPressed: _openInbox,
                 icon: const Icon(Icons.notifications_none_rounded),
               ),
-              if (_unreadCount > 0)
+              if (_unreadCount + _friendUnreadCount > 0)
                 Positioned(
                   right: -3,
                   top: -3,
@@ -2518,7 +2576,9 @@ class _HomeHeaderState extends State<HomeHeader> with WidgetsBindingObserver {
                     ),
                     alignment: Alignment.center,
                     child: Text(
-                      _unreadCount > 99 ? '99+' : '$_unreadCount',
+                      _unreadCount + _friendUnreadCount > 99
+                          ? '99+'
+                          : '${_unreadCount + _friendUnreadCount}',
                       style: const TextStyle(
                         color: AppColors.ink,
                         fontSize: 10,
@@ -10089,11 +10149,14 @@ class WorkoutSet {
     required this.reps,
     this.durationSeconds = 0,
     this.distanceKm = 0,
-    this.speedKmh = 0,
+    double speedKmh = 0,
     this.inclinePercent = 0,
     this.resistanceLevel = 0,
     this.paceSecondsPerKm = 0,
-  }) : setId = setId ?? _newWorkoutIdentity();
+    // Keep the public constructor compatible with existing callers.
+    // ignore: prefer_initializing_formals
+  }) : _speedKmh = speedKmh,
+       setId = setId ?? _newWorkoutIdentity();
 
   factory WorkoutSet.nextFrom(WorkoutSet? previous) => WorkoutSet(
     weight: previous?.weight ?? 0,
@@ -10111,7 +10174,14 @@ class WorkoutSet {
   int reps;
   int durationSeconds;
   double distanceKm;
-  double speedKmh;
+  double _speedKmh;
+  double get speedKmh => activitySpeedKmh(
+    durationSeconds: durationSeconds,
+    distanceKm: distanceKm,
+    speedKmh: _speedKmh,
+    paceSecondsPerKm: paceSecondsPerKm,
+  );
+  set speedKmh(double value) => _speedKmh = value;
   double inclinePercent;
   double resistanceLevel;
   int paceSecondsPerKm;
@@ -10218,13 +10288,16 @@ class RecordedSet {
         '${formatWeight(distanceUnit == 'm' ? distanceKm * 1000 : distanceKm)} $distanceUnit',
       );
     }
-    if (speedKmh > 0) values.add('${formatWeight(speedKmh)} km/h');
+    final speed = activitySpeedKmh(
+      durationSeconds: durationSeconds,
+      distanceKm: distanceKm,
+      speedKmh: speedKmh,
+      paceSecondsPerKm: paceSecondsPerKm,
+    );
+    if (speed > 0) values.add('${formatWeight(speed)} km/h');
     if (inclinePercent > 0) values.add('傾斜 ${formatWeight(inclinePercent)}%');
     if (resistanceLevel > 0) {
       values.add('レベル ${formatWeight(resistanceLevel)}');
-    }
-    if (paceSecondsPerKm > 0) {
-      values.add('${formatPace(paceSecondsPerKm)} /km');
     }
     return values.join(' ・ ');
   }
@@ -10831,89 +10904,90 @@ class _ActivityInputGrid extends StatelessWidget {
   final ValueChanged<int> onPaceChanged;
 
   @override
-  Widget build(BuildContext context) {
-    final fields = ExerciseFormCatalog.byId[exerciseId]?.recordFields;
-    final showDistance =
-        fields?.contains('distance') ?? (exerciseName != 'ステアクライマー');
-    final showSpeed =
-        fields?.contains('speed') ??
-        (exerciseName == 'トレッドミル' ||
-            exerciseName == 'エアロバイク' ||
-            recordType == ExerciseRecordType.distance);
-    final showIncline =
-        fields?.contains('incline') ?? (exerciseName == 'トレッドミル');
-    final showResistance =
-        fields?.contains('resistance') ??
-        (exerciseName == 'エアロバイク' ||
-            exerciseName == 'クロストレーナー' ||
-            exerciseName == 'ステアクライマー');
-    final showPace =
-        fields?.contains('pace') ??
-        (exerciseName == 'ローイングマシン' ||
-            recordType == ExerciseRecordType.distance);
-    final isTreadmill =
-        exerciseId == 'treadmill' ||
-        (exerciseId == null && exerciseName == 'トレッドミル');
-    return Wrap(
-      spacing: 10,
-      runSpacing: 10,
-      children: [
-        if (recordType == ExerciseRecordType.loadedDistance)
+  Widget build(BuildContext context) => StatefulBuilder(
+    builder: (context, update) {
+      final fields = ExerciseFormCatalog.byId[exerciseId]?.recordFields;
+      final showDistance =
+          fields?.contains('distance') ?? (exerciseName != 'ステアクライマー');
+      final showSpeed =
+          showDistance ||
+          (fields?.contains('speed') ?? exerciseName == 'ステアクライマー');
+      final automaticSpeed =
+          set.durationSeconds > 0 &&
+          set.distanceKm.isFinite &&
+          set.distanceKm > 0;
+      final showIncline =
+          fields?.contains('incline') ?? (exerciseName == 'トレッドミル');
+      final showResistance =
+          fields?.contains('resistance') ??
+          (exerciseName == 'エアロバイク' ||
+              exerciseName == 'クロストレーナー' ||
+              exerciseName == 'ステアクライマー');
+      final isTreadmill =
+          exerciseId == 'treadmill' ||
+          (exerciseId == null && exerciseName == 'トレッドミル');
+      return Wrap(
+        spacing: 10,
+        runSpacing: 10,
+        children: [
+          if (recordType == ExerciseRecordType.loadedDistance)
+            _MetricInput(
+              key: Key('loadedWeightField$fieldPrefix'),
+              label: '重量（kg）',
+              value: set.weight,
+              onChanged: onWeightChanged,
+            ),
           _MetricInput(
-            key: Key('loadedWeightField$fieldPrefix'),
-            label: '重量（kg）',
-            value: set.weight,
-            onChanged: onWeightChanged,
-          ),
-        _MetricInput(
-          key: Key('durationField$fieldPrefix'),
-          label: '時間（分）',
-          value: set.durationSeconds / 60,
-          onChanged: (value) => onDurationChanged((value * 60).round()),
-        ),
-        if (showDistance)
-          _MetricInput(
-            key: Key('distanceField$fieldPrefix'),
-            label: '距離（$distanceUnit）',
-            value: distanceUnit == 'm' ? set.distanceKm * 1000 : set.distanceKm,
+            key: Key('durationField$fieldPrefix'),
+            label: '時間（分）',
+            value: set.durationSeconds / 60,
             onChanged: (value) =>
-                onDistanceChanged(distanceUnit == 'm' ? value / 1000 : value),
+                update(() => onDurationChanged((value * 60).round())),
           ),
-        if (showSpeed)
-          _MetricInput(
-            key: Key('speedField$fieldPrefix'),
-            label: isTreadmill ? '速度（km/h・任意）' : '速度（km/h）',
-            value: set.speedKmh,
-            onChanged: onSpeedChanged,
-          ),
-        if (showIncline)
-          _MetricInput(
-            key: Key('inclineField$fieldPrefix'),
-            label: isTreadmill ? '傾斜（%・任意）' : '傾斜（%）',
-            value: set.inclinePercent,
-            onChanged: onInclineChanged,
-          ),
-        if (showResistance)
-          _MetricInput(
-            key: Key('resistanceField$fieldPrefix'),
-            label: '負荷レベル',
-            value: set.resistanceLevel,
-            onChanged: onResistanceChanged,
-          ),
-        if (showPace)
-          _MetricInput(
-            key: Key('paceField$fieldPrefix'),
-            label: 'ペース（分/km）',
-            value: set.paceSecondsPerKm / 60,
-            onChanged: (value) => onPaceChanged((value * 60).round()),
-          ),
-      ],
-    );
-  }
+          if (showDistance)
+            _MetricInput(
+              key: Key('distanceField$fieldPrefix'),
+              label: '距離（$distanceUnit）',
+              value: distanceUnit == 'm'
+                  ? set.distanceKm * 1000
+                  : set.distanceKm,
+              onChanged: (value) => update(
+                () => onDistanceChanged(
+                  distanceUnit == 'm' ? value / 1000 : value,
+                ),
+              ),
+            ),
+          if (showSpeed)
+            _MetricInput(
+              key: Key('speedField$fieldPrefix'),
+              label: automaticSpeed ? '平均速度（km/h・自動）' : '速度（km/h・任意）',
+              readOnly: automaticSpeed,
+              value: set.speedKmh,
+              onChanged: onSpeedChanged,
+            ),
+          if (showIncline)
+            _MetricInput(
+              key: Key('inclineField$fieldPrefix'),
+              label: isTreadmill ? '傾斜（%・任意）' : '傾斜（%）',
+              value: set.inclinePercent,
+              onChanged: onInclineChanged,
+            ),
+          if (showResistance)
+            _MetricInput(
+              key: Key('resistanceField$fieldPrefix'),
+              label: '負荷レベル',
+              value: set.resistanceLevel,
+              onChanged: onResistanceChanged,
+            ),
+        ],
+      );
+    },
+  );
 }
 
 class _MetricInput extends StatelessWidget {
   const _MetricInput({
+    this.readOnly = false,
     super.key,
     required this.label,
     required this.value,
@@ -10922,6 +10996,7 @@ class _MetricInput extends StatelessWidget {
 
   final String label;
   final double value;
+  final bool readOnly;
   final ValueChanged<double> onChanged;
 
   @override
@@ -10933,11 +11008,17 @@ class _MetricInput extends StatelessWidget {
         children: [
           Text(label, style: setLabelStyle),
           const SizedBox(height: 4),
-          ValueBox(
-            value: value,
-            allowDecimal: true,
-            onChanged: (next) => onChanged(next.toDouble()),
-          ),
+          if (readOnly)
+            InputDecorator(
+              decoration: const InputDecoration(),
+              child: Text(formatWeight(value)),
+            )
+          else
+            ValueBox(
+              value: value,
+              allowDecimal: true,
+              onChanged: (next) => onChanged(next.toDouble()),
+            ),
         ],
       ),
     );
@@ -11813,7 +11894,7 @@ class CloudBackupSection extends StatelessWidget {
 }
 
 class _ProfileNameCard extends StatefulWidget {
-  const _ProfileNameCard();
+  const _ProfileNameCard({super.key});
 
   @override
   State<_ProfileNameCard> createState() => _ProfileNameCardState();
@@ -11821,6 +11902,8 @@ class _ProfileNameCard extends StatefulWidget {
 
 class _ProfileNameCardState extends State<_ProfileNameCard> {
   String _name = '';
+  String? _avatarPath;
+  bool _avatarAvailable = false;
   bool _loaded = false;
   bool _editing = false;
 
@@ -11838,6 +11921,13 @@ class _ProfileNameCardState extends State<_ProfileNameCard> {
         _name = name;
         _loaded = true;
       });
+      final profile = await configuredFriends()?.profile();
+      if (mounted) {
+        setState(() {
+          _avatarPath = profile?['avatar_path'] as String?;
+          _avatarAvailable = profile?.containsKey('avatar_path') ?? false;
+        });
+      }
     } catch (_) {
       if (!mounted) return;
       setState(() => _loaded = true);
@@ -11855,6 +11945,7 @@ class _ProfileNameCardState extends State<_ProfileNameCard> {
           key: const Key('profileDisplayNameField'),
           initialValue: _name,
           autofocus: true,
+          maxLength: 40,
           textInputAction: TextInputAction.done,
           decoration: const InputDecoration(
             labelText: '表示名（任意）',
@@ -11882,6 +11973,8 @@ class _ProfileNameCardState extends State<_ProfileNameCard> {
         await ProfilePreference.setDisplayName(result);
         if (!mounted) return;
         setState(() => _name = result.trim());
+        final repo = configuredFriends();
+        if (repo != null) await repo.ensureProfile(result);
       } catch (_) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
@@ -11892,54 +11985,119 @@ class _ProfileNameCardState extends State<_ProfileNameCard> {
     if (mounted) setState(() => _editing = false);
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
-      child: Padding(
-        padding: const EdgeInsets.all(18),
-        child: Row(
+  Future<void> _editAvatar() async {
+    final repo = configuredFriends();
+    if (repo == null) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('写真の登録にはログインが必要です')));
+      return;
+    }
+    final owner = repo.userId;
+    final choice = await showModalBottomSheet<String>(
+      context: context,
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            const CircleAvatar(
-              radius: 28,
-              backgroundColor: AppColors.primaryGreen,
-              child: Icon(Icons.person_rounded, size: 30),
+            ListTile(
+              leading: const Icon(Icons.photo_library_outlined),
+              title: const Text('写真を選ぶ'),
+              onTap: () => Navigator.pop(context, 'pick'),
             ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    _name.isEmpty
-                        ? ProfilePreference.defaultDisplayName
-                        : _name,
-                    key: const Key('profileDisplayName'),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                  const SizedBox(height: 3),
-                  const Text(
-                    '今日の1セットを積み上げよう',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(fontSize: 12, color: Color(0xFF777F78)),
-                  ),
-                ],
+            if (_avatarPath != null)
+              ListTile(
+                leading: const Icon(Icons.delete_outline),
+                title: const Text('写真を削除'),
+                onTap: () => Navigator.pop(context, 'remove'),
               ),
-            ),
-            IconButton(
-              key: const Key('editProfileDisplayName'),
-              tooltip: '表示名を編集',
-              onPressed: _loaded && !_editing ? _edit : null,
-              icon: const Icon(Icons.edit_outlined),
-            ),
           ],
         ),
+      ),
+    );
+    if (choice == null || !mounted) return;
+    setState(() => _editing = true);
+    try {
+      Uint8List? photo;
+      if (choice == 'pick') {
+        final picked = await image_picker.ImagePicker().pickImage(
+          source: image_picker.ImageSource.gallery,
+          maxWidth: 1024,
+          maxHeight: 1024,
+        );
+        if (picked == null) return;
+        photo = await prepareFriendAvatar(await picked.readAsBytes());
+      }
+      if (repo.client.auth.currentUser?.id != owner) {
+        throw StateError('Account changed');
+      }
+      await repo.ensureProfile(_name);
+      await repo.setAvatar(photo, expectedOwner: owner);
+      await _load();
+      ProfilePreference.changes.value++;
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('プロフィール写真を保存できませんでした。もう一度お試しください。')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _editing = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 24),
+      child: Row(
+        children: [
+          InkWell(
+            key: const Key('editProfileAvatar'),
+            borderRadius: BorderRadius.circular(28),
+            onTap: _loaded && !_editing && _avatarAvailable
+                ? _editAvatar
+                : null,
+            child: Tooltip(
+              message: _avatarAvailable ? 'プロフィール写真を変更' : 'プロフィール',
+              child: FriendAvatar(
+                repository: configuredFriends(),
+                path: _avatarPath,
+                radius: 28,
+              ),
+            ),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  _name.isEmpty ? ProfilePreference.defaultDisplayName : _name,
+                  key: const Key('profileDisplayName'),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                const Text(
+                  '今日の1セットを積み上げよう',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 12, color: Color(0xFF777F78)),
+                ),
+              ],
+            ),
+          ),
+          IconButton(
+            key: const Key('editProfileDisplayName'),
+            tooltip: '表示名を編集',
+            onPressed: _loaded && !_editing ? _edit : null,
+            icon: const Icon(Icons.edit_outlined),
+          ),
+        ],
       ),
     );
   }
@@ -12003,29 +12161,41 @@ class ProfilePage extends StatelessWidget {
             style: TextStyle(fontSize: 27, fontWeight: FontWeight.w900),
           ),
           const SizedBox(height: 22),
-          const _ProfileNameCard(),
           Card(
-            child: ListTile(
-              key: const Key('accountButton'),
-              leading: const Icon(Icons.manage_accounts_outlined),
-              title: const Text('アカウント'),
-              subtitle: const Text('メールで登録・ログイン'),
-              trailing: const Icon(Icons.chevron_right_rounded),
-              onTap: () => Navigator.of(context).push<void>(
-                MaterialPageRoute(
-                  builder: (_) => CloudAccountPage(
-                    historyCount: history.length,
-                    onSyncRequested: onSyncRequested,
+            clipBehavior: Clip.antiAlias,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(22),
+            ),
+            child: Column(
+              children: [
+                _ProfileNameCard(key: ValueKey(configuredFriends()?.userId)),
+                const Divider(height: 1, thickness: 0.5),
+                ListTile(
+                  key: const Key('accountButton'),
+                  leading: const Icon(Icons.manage_accounts_outlined),
+                  title: const Text('アカウント'),
+                  subtitle: const Text('メールで登録・ログイン'),
+                  trailing: const Icon(Icons.chevron_right_rounded),
+                  onTap: () => Navigator.of(context).push<void>(
+                    MaterialPageRoute(
+                      builder: (_) => CloudAccountPage(
+                        historyCount: history.length,
+                        onSyncRequested: onSyncRequested,
+                      ),
+                    ),
                   ),
                 ),
-              ),
+                const ReportAdminEntry(embedded: true),
+              ],
             ),
           ),
-          const ReportAdminEntry(),
           _sectionTitle('トレーニング設定'),
           _trainingSettingsCard(context),
           _sectionTitle('利用場所'),
           Card(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(22),
+            ),
             child: ListTile(
               key: const Key('registeredGymsButton'),
               leading: const Icon(Icons.location_on_outlined),
@@ -12044,6 +12214,9 @@ class ProfilePage extends StatelessWidget {
           ),
           _sectionTitle('SETKEEP TRAINER連携'),
           Card(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(22),
+            ),
             child: ListTile(
               key: const Key('trainerQrButton'),
               leading: const Icon(Icons.qr_code_scanner_rounded),
@@ -12063,6 +12236,9 @@ class ProfilePage extends StatelessWidget {
           _sectionTitle('その他設定'),
           Card(
             clipBehavior: Clip.antiAlias,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(22),
+            ),
             child: Column(
               children: [
                 ListTile(
@@ -12075,7 +12251,7 @@ class ProfilePage extends StatelessWidget {
                     MaterialPageRoute(builder: (_) => const ContactPage()),
                   ),
                 ),
-                const Divider(height: 1),
+                const Divider(height: 1, thickness: 0.5),
                 ListTile(
                   key: const Key('appAboutButton'),
                   leading: const Icon(Icons.info_outline_rounded),
@@ -12091,6 +12267,9 @@ class ProfilePage extends StatelessWidget {
           ),
           _sectionTitle('バックアップ・データ管理'),
           Card(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(22),
+            ),
             child: ListTile(
               key: const Key('backupDataManagementButton'),
               leading: const Icon(Icons.backup_outlined),
@@ -12501,6 +12680,9 @@ class _TrainingSettingsPageState extends State<TrainingSettingsPage> {
         children: [
           Card(
             clipBehavior: Clip.antiAlias,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(22),
+            ),
             child: Column(
               children: [
                 SwitchListTile(
@@ -12520,7 +12702,7 @@ class _TrainingSettingsPageState extends State<TrainingSettingsPage> {
                   },
                 ),
                 if (_completionCheckEnabled) ...[
-                  const Divider(height: 1),
+                  const Divider(height: 1, thickness: 0.5),
                   SwitchListTile(
                     key: const Key('restTimerSwitch'),
                     secondary: const Icon(Icons.timer_outlined),
@@ -12533,7 +12715,7 @@ class _TrainingSettingsPageState extends State<TrainingSettingsPage> {
                     },
                   ),
                   if (_restTimerEnabled) ...[
-                    const Divider(height: 1),
+                    const Divider(height: 1, thickness: 0.5),
                     ListTile(
                       key: const Key('restTimerDurationButton'),
                       leading: const Icon(Icons.hourglass_bottom_rounded),
@@ -12546,7 +12728,7 @@ class _TrainingSettingsPageState extends State<TrainingSettingsPage> {
                     ),
                   ],
                 ],
-                const Divider(height: 1),
+                const Divider(height: 1, thickness: 0.5),
                 SwitchListTile(
                   key: const Key('trainingDurationSwitch'),
                   secondary: const Icon(Icons.timer_outlined),
@@ -12561,7 +12743,7 @@ class _TrainingSettingsPageState extends State<TrainingSettingsPage> {
                     widget.onWorkoutDurationEnabledChanged(enabled);
                   },
                 ),
-                const Divider(height: 1),
+                const Divider(height: 1, thickness: 0.5),
                 ListTile(
                   key: const Key('savedMenuManagementButton'),
                   leading: const Icon(Icons.bookmarks_outlined),
@@ -12581,7 +12763,7 @@ class _TrainingSettingsPageState extends State<TrainingSettingsPage> {
                     ),
                   ),
                 ),
-                const Divider(height: 1),
+                const Divider(height: 1, thickness: 0.5),
                 ListTile(
                   key: const Key('customExerciseManagementButton'),
                   leading: const Icon(Icons.tune_rounded),
