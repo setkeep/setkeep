@@ -69,7 +69,7 @@ JWT失効・端末のSDKによるトークン更新失敗・受付期限切れ�
 RLSや一般ユーザーの書込権限は広げない。本人退会時に参照UUIDを外すための変更。
 対象テナントを既存mutationと同じ順序でロックする。デッドロック/タイムアウト時もロールバックされ再試行可能。
 
-## 反映・ロールバック（今回未実施）
+## 反映・ロールバック
 
 適用SQL: `supabase/migrations/20261004180000_account_deletion_offboarding.sql`
 前提: 現在のTRAINER/既読/フレンドマイグレーション。店舗報告が存在する場合のみ対応する。
@@ -81,7 +81,9 @@ SQLを先に、続いてこのFunctionを反映する。新Functionを旧DBへ�
 完全なスキーマ逆戻しは `supabase/rollback/20261004180000_account_deletion_offboarding.sql` を使う。
 NULL化済み行があると元のNOT NULLへ戻せないため、スクリプトは変更前に停止する。
 削除済みAuth・CASCADEデータ・元の参照UUIDをロールバックSQLが復元することはない。
-本番反映・実ユーザー削除・定期処理の設定はこの作業では実施しない。
+2026-10-04: このSQLのみ本番へ適用し、delete-accountをversion 2へ更新済み（ACTIVE、verify_jwt=true）。
+実ユーザー削除・定期処理の設定は未実施。非破壊の本番確認と証跡は
+`docs/qa/account_deletion_production_2026-10-04.md` を参照。
 
 ## ローカル確認
 
