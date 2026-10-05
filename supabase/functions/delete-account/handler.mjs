@@ -1,3 +1,5 @@
+import { cleanupAccountAvatars } from './avatar_cleanup.mjs';
+
 // No client-supplied user ID is accepted. Secrets exist only in the Edge runtime.
 export function createDeleteAccountHandler({ url, anonKey, serviceKey }, fetcher = fetch) {
   const json = (status, body) => Response.json(body, {
@@ -13,6 +15,9 @@ export function createDeleteAccountHandler({ url, anonKey, serviceKey }, fetcher
       return json(503, { error: 'not_configured' });
     }
     let tokenHash;
+    let avatarCleanup;
+    let avatarCleanupRequired = false;
+    let authDeletionStarted = false;
     const rpc = async (name, body) => {
       const response = await fetcher(`${url}/rest/v1/rpc/${name}`, {
         method: 'POST',
@@ -47,6 +52,7 @@ export function createDeleteAccountHandler({ url, anonKey, serviceKey }, fetcher
           !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(user.id)) {
         return json(401, { error: 'unauthorized' });
       }
+      user.id = user.id.toLowerCase();
       const preparation = await rpc('account_deletion_prepare', {
         p_user: user.id, p_token_hash: tokenHash,
       });
@@ -57,8 +63,17 @@ export function createDeleteAccountHandler({ url, anonKey, serviceKey }, fetcher
         if (await completed() === true) return json(200, { deleted: true });
         return json(503, { error: 'preparation_failed' });
       }
-      // The DB trigger cleans references INSIDE this Auth transaction. A failed
-      // Auth deletion rolls cleanup back; never pre-delete shared records here.
+      // The new DB contract opts into media cleanup. Old DB deployments keep
+      // their existing no-Storage flow until the explicit migration is applied.
+      if (preparation.avatar_cleanup_required === true) {
+        avatarCleanupRequired = true;
+        avatarCleanup = await cleanupAccountAvatars({
+          url, serviceKey, userId: user.id, tokenHash, rpc, fetcher,
+        });
+      }
+      // Shared records still change only INSIDE the Auth transaction. Storage
+      // media is removed first under its upload gate and cannot be rolled back.
+      authDeletionStarted = true;
       const deleted = await fetcher(`${url}/auth/v1/admin/users/${user.id}`, {
         method: 'DELETE',
         headers: {
@@ -70,6 +85,8 @@ export function createDeleteAccountHandler({ url, anonKey, serviceKey }, fetcher
         signal: AbortSignal.timeout(15000),
       });
       if (!deleted.ok) {
+        await avatarCleanup?.release();
+        avatarCleanup = undefined;
         // Concurrent duplicate requests can observe a 404 after the first
         // succeeds. Only the transaction's completion receipt counts as proof.
         if (await completed() === true) return json(200, { deleted: true });
@@ -78,14 +95,28 @@ export function createDeleteAccountHandler({ url, anonKey, serviceKey }, fetcher
           p_user: user.id, p_token_hash: tokenHash,
         });
         if (retry?.error === 'tenant_owner_requires_transfer') {
-          return json(409, { error: 'tenant_owner_requires_transfer' });
+          return json(409, {
+            error: avatarCleanupRequired
+              ? 'tenant_owner_requires_transfer_after_avatar_cleanup'
+              : 'tenant_owner_requires_transfer',
+          });
         }
-        return json(502, { error: 'deletion_failed' });
+        return json(502, {
+          error: avatarCleanupRequired ? 'deletion_unconfirmed_after_avatar_cleanup' : 'deletion_failed',
+        });
       }
       return json(200, { deleted: true });
     } catch (_) {
+      await avatarCleanup?.release();
       // Do not leak tokens, upstream responses, or configuration in errors/logs.
-      return json(503, { error: 'unavailable' });
+      if (_?.code === 'tenant_owner_requires_transfer') {
+        return json(409, { error: 'tenant_owner_requires_transfer' });
+      }
+      return json(503, {
+        error: avatarCleanupRequired
+          ? authDeletionStarted ? 'deletion_unconfirmed_after_avatar_cleanup' : 'avatar_cleanup_unavailable'
+          : 'unavailable',
+      });
     }
   };
 }

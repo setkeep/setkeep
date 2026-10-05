@@ -28,6 +28,9 @@ void main() {
     'success',
     'rejected',
     'owner blocked',
+    'owner after photos',
+    'avatar cleanup failed',
+    'auth unconfirmed after photos',
     'retry',
     'concurrent',
     'unexpected',
@@ -46,8 +49,12 @@ void main() {
           final attempt = requests
               .where((path) => path == '/functions/v1/delete-account')
               .length;
-          request.response.statusCode = scenario == 'owner blocked'
+          request.response.statusCode =
+              (scenario == 'owner blocked' || scenario == 'owner after photos')
               ? 409
+              : (scenario == 'avatar cleanup failed' ||
+                    scenario == 'auth unconfirmed after photos')
+              ? 503
               : scenario == 'rejected'
               ? 403
               : scenario == 'retry' && attempt == 1
@@ -57,6 +64,15 @@ void main() {
             jsonEncode(
               scenario == 'owner blocked'
                   ? {'error': 'tenant_owner_requires_transfer'}
+                  : scenario == 'owner after photos'
+                  ? {
+                      'error':
+                          'tenant_owner_requires_transfer_after_avatar_cleanup',
+                    }
+                  : scenario == 'avatar cleanup failed'
+                  ? {'error': 'avatar_cleanup_unavailable'}
+                  : scenario == 'auth unconfirmed after photos'
+                  ? {'error': 'deletion_unconfirmed_after_avatar_cleanup'}
                   : {'deleted': scenario != 'unexpected'},
             ),
           );
@@ -108,6 +124,22 @@ void main() {
               (error) => error.message,
               'message',
               allOf(contains('所有権'), contains('閉鎖')),
+            ),
+          ),
+        );
+        expect(client.auth.currentSession, isNotNull);
+        expect(await storage.hasAccessToken(), isTrue);
+        expect(requests, ['/functions/v1/delete-account']);
+      } else if (scenario == 'owner after photos' ||
+          scenario == 'avatar cleanup failed' ||
+          scenario == 'auth unconfirmed after photos') {
+        await expectLater(
+          service.deleteAccount(),
+          throwsA(
+            isA<AuthException>().having(
+              (error) => error.message,
+              'message',
+              allOf(contains('プロフィール写真'), contains('アカウント削除')),
             ),
           ),
         );

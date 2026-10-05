@@ -77,26 +77,40 @@ class SupabaseAccountAuthService implements AccountAuthService {
       'TRAINERの組織所有者は退会できません。TRAINERで所有権を移管するか、組織の閉鎖についてお問い合わせください。'
       '他の利用者の記録を守るため、アカウントと共有情報は変更していません。';
 
+  static String? _deletionFailureMessage(dynamic details) {
+    if (details is! Map) return null;
+    switch (details['error']) {
+      case 'tenant_owner_requires_transfer':
+        return _ownerDeletionMessage;
+      case 'tenant_owner_requires_transfer_after_avatar_cleanup':
+        return 'アカウント削除は完了していません。組織の所有権を移管してから再度お試しください。'
+            'プロフィール写真の削除処理は先に実行されています。';
+      case 'avatar_cleanup_unavailable':
+        return 'プロフィール写真の削除とアカウント削除の完了を確認できていません。'
+            '写真の一部は削除されている場合があります。再度お試しいただくか、お問い合わせください。';
+      case 'deletion_unconfirmed_after_avatar_cleanup':
+        return 'プロフィール写真の削除処理は先に実行されています。'
+            'アカウント削除の完了を確認できませんでした。再度お試しください。';
+    }
+    return null;
+  }
+
   Future<void> _deleteAccount() async {
     if (_client.auth.currentSession == null) {
       throw const AuthException('ログインし直してからお試しください。');
     }
     try {
       final response = await _client.functions.invoke('delete-account');
-      if (response.data is Map &&
-          response.data['error'] == 'tenant_owner_requires_transfer') {
-        throw const AuthException(_ownerDeletionMessage);
-      }
+      final failureMessage = _deletionFailureMessage(response.data);
+      if (failureMessage != null) throw AuthException(failureMessage);
       if (response.status != 200 ||
           response.data is! Map ||
           response.data['deleted'] != true) {
         throw const AuthException('削除を確認できませんでした。');
       }
     } on FunctionException catch (error) {
-      if (error.details is Map &&
-          error.details['error'] == 'tenant_owner_requires_transfer') {
-        throw const AuthException(_ownerDeletionMessage);
-      }
+      final failureMessage = _deletionFailureMessage(error.details);
+      if (failureMessage != null) throw AuthException(failureMessage);
       throw const AuthException('削除の完了を確認できませんでした。接続を確認して再度お試しください。');
     } on AuthException {
       rethrow;
