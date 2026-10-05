@@ -1,3 +1,4 @@
+import 'design/workout_month_calendar.dart';
 import 'profile/profile_preference.dart';
 export 'profile/profile_preference.dart';
 import 'friends/friend_avatar.dart';
@@ -3932,13 +3933,6 @@ class _MonthlyHistoryPageState extends State<MonthlyHistoryPage> {
       (total, workout) =>
           total + workout.sets.where((set) => set.recordType.usesSets).length,
     );
-    final firstDay = DateTime(_visibleMonth.year, _visibleMonth.month, 1);
-    final leadingEmptyDays = firstDay.weekday - 1;
-    final daysInMonth = DateTime(
-      _visibleMonth.year,
-      _visibleMonth.month + 1,
-      0,
-    ).day;
     final today = DateTime.now();
     final isCurrentMonth =
         _visibleMonth.year == today.year && _visibleMonth.month == today.month;
@@ -4045,102 +4039,11 @@ class _MonthlyHistoryPageState extends State<MonthlyHistoryPage> {
             ),
           ),
           const SizedBox(height: 18),
-          Card(
-            key: const Key('monthlyCalendar'),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(22),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.all(14),
-              child: Column(
-                children: [
-                  Row(
-                    children: [
-                      for (final day in ['月', '火', '水', '木', '金', '土', '日'])
-                        Expanded(
-                          child: Center(
-                            child: Text(
-                              day,
-                              style: const TextStyle(
-                                fontSize: 11,
-                                color: Color(0xFF777F78),
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                          ),
-                        ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  GridView.builder(
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    gridDelegate:
-                        const SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: 7,
-                          mainAxisExtent: 44,
-                        ),
-                    itemCount: leadingEmptyDays + daysInMonth,
-                    itemBuilder: (context, index) {
-                      if (index < leadingEmptyDays) return const SizedBox();
-                      final day = index - leadingEmptyDays + 1;
-                      final date = DateTime(
-                        _visibleMonth.year,
-                        _visibleMonth.month,
-                        day,
-                      );
-                      final hasWorkout = monthWorkouts.any(
-                        (workout) => _sameDay(workout.date, date),
-                      );
-                      final selected =
-                          _selectedDay != null && _sameDay(_selectedDay!, date);
-                      return InkWell(
-                        key: Key('calendarDay$day'),
-                        borderRadius: BorderRadius.circular(12),
-                        onTap: () => _selectDay(date, selected),
-                        child: Container(
-                          margin: const EdgeInsets.all(2),
-                          decoration: BoxDecoration(
-                            color: selected
-                                ? const Color(0xFF101820)
-                                : hasWorkout
-                                ? const Color(0xFFC7F36B)
-                                      .withValues(alpha: 0.42)
-                                : null,
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Text(
-                                '$day',
-                                style: TextStyle(
-                                  fontWeight: hasWorkout
-                                      ? FontWeight.w900
-                                      : FontWeight.w500,
-                                  color: selected ? Colors.white : null,
-                                ),
-                              ),
-                              if (hasWorkout)
-                                Container(
-                                  width: 4,
-                                  height: 4,
-                                  decoration: BoxDecoration(
-                                    color: selected
-                                        ? AppColors.primaryGreen
-                                        : const Color(0xFF101820),
-                                    shape: BoxShape.circle,
-                                  ),
-                                ),
-                            ],
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-                ],
-              ),
-            ),
+          WorkoutMonthCalendar(
+            visibleMonth: _visibleMonth,
+            selectedDay: _selectedDay,
+            recordedDates: monthWorkouts.map((workout) => workout.date),
+            onSelectDay: _selectDay,
           ),
           const SizedBox(height: 22),
           Text(

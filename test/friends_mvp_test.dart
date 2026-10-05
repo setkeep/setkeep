@@ -116,8 +116,14 @@ void main() {
       await t.pumpAndSettle();
       await t.tap(find.text('Alice'));
       await t.pumpAndSettle();
-      expect(find.text('ベンチプレス'), findsOneWidget);
       expect(find.text('Muscle heatmap'), findsOneWidget);
+      await t.scrollUntilVisible(
+        find.text('ベンチプレス'),
+        200,
+        scrollable: find.byType(Scrollable).first,
+      );
+      expect(find.text('ベンチプレス'), findsOneWidget);
+      await t.ensureVisible(find.text('Like 0'));
       expect(find.text('Like 0'), findsOneWidget);
       await t.tap(find.text('Like 0'));
       await t.pumpAndSettle();
@@ -125,10 +131,13 @@ void main() {
       await t.tap(find.text('Like 1'));
       await t.pumpAndSettle();
       expect(repo.liked, false);
+      await t.ensureVisible(find.byType(TextField));
       await t.enterText(find.byType(TextField), 'Nice!');
+      await t.ensureVisible(find.text('Comment'));
       await t.tap(find.text('Comment'));
       await t.pumpAndSettle();
       expect(find.text('Nice!'), findsOneWidget);
+      await t.ensureVisible(find.byIcon(Icons.delete_outline));
       await t.tap(find.byIcon(Icons.delete_outline));
       await t.pumpAndSettle();
       expect(find.text('Nice!'), findsNothing);

@@ -1,3 +1,5 @@
+import '../design/workout_month_calendar.dart';
+
 import 'dart:async';
 
 import 'package:share_plus/share_plus.dart';
@@ -615,6 +617,17 @@ class _FriendActivityPageState extends State<FriendActivityPage>
   bool busy = false;
   Map<String, dynamic>? selected;
   final _commentKey = GlobalKey();
+  DateTime _visibleMonth = DateTime(DateTime.now().year, DateTime.now().month);
+  DateTime? _selectedDay;
+  bool _calendarInitialized = false;
+  bool _sameDay(DateTime a, DateTime b) =>
+      a.year == b.year && a.month == b.month && a.day == b.day;
+  void _moveMonth(int amount) => setState(() {
+    _visibleMonth = DateTime(_visibleMonth.year, _visibleMonth.month + amount);
+    _selectedDay = null;
+    selected = null;
+    comments = [];
+  });
   late final String _viewer = widget.repository.userId;
   StreamSubscription<dynamic>? _auth;
   @override
@@ -671,7 +684,10 @@ class _FriendActivityPageState extends State<FriendActivityPage>
     }
     final result = await widget.repository.feed(owner: widget.owner);
     final matches = result.where(
-      (r) => r['id'] == (selected?['id'] ?? widget.selectedId),
+      (r) =>
+          r['id'] ==
+          (selected?['id'] ??
+              (_calendarInitialized ? null : widget.selectedId)),
     );
     final current = matches.isEmpty ? null : matches.first;
     final messages = current == null
@@ -682,6 +698,16 @@ class _FriendActivityPageState extends State<FriendActivityPage>
         rows = result;
         selected = current;
         comments = messages;
+        if (!_calendarInitialized) {
+          final date = current == null
+              ? null
+              : socialWorkout(current).date.toLocal();
+          if (date != null) {
+            _visibleMonth = DateTime(date.year, date.month);
+            _selectedDay = DateTime(date.year, date.month, date.day);
+          }
+          _calendarInitialized = true;
+        }
       });
       if (widget.commentNotificationId != null) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -727,6 +753,13 @@ class _FriendActivityPageState extends State<FriendActivityPage>
 
   @override
   Widget build(BuildContext context) {
+    final shownRows = _selectedDay == null
+        ? <Map<String, dynamic>>[]
+        : rows
+              .where(
+                (r) => _sameDay(socialWorkout(r).date.toLocal(), _selectedDay!),
+              )
+              .toList();
     final row = selected;
     final workout = row == null ? null : socialWorkout(row);
     final likes = (row?['friend_likes'] as List?) ?? [];
@@ -771,7 +804,70 @@ class _FriendActivityPageState extends State<FriendActivityPage>
                   ),
                 ),
               ),
-            for (final r in rows)
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                IconButton(
+                  tooltip: label(context, '前の月', 'Previous month'),
+                  onPressed: busy ? null : () => _moveMonth(-1),
+                  icon: const Icon(Icons.chevron_left_rounded),
+                ),
+                Expanded(
+                  child: Text(
+                    label(
+                      context,
+                      '${_visibleMonth.year}年 ${_visibleMonth.month}月',
+                      '${_visibleMonth.year}/${_visibleMonth.month}',
+                    ),
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      fontSize: 21,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ),
+                IconButton(
+                  tooltip: label(context, '次の月', 'Next month'),
+                  onPressed: busy ? null : () => _moveMonth(1),
+                  icon: const Icon(Icons.chevron_right_rounded),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            WorkoutMonthCalendar(
+              visibleMonth: _visibleMonth,
+              selectedDay: _selectedDay,
+              recordedDates: rows.map((r) => socialWorkout(r).date.toLocal()),
+              onSelectDay: (date, _) {
+                if (busy) return;
+                setState(() {
+                  _selectedDay = date;
+                  selected = null;
+                  comments = [];
+                });
+              },
+            ),
+            const SizedBox(height: 22),
+            Text(
+              _selectedDay == null
+                  ? label(context, '日付を選択してください', 'Select a day')
+                  : label(
+                      context,
+                      '${_selectedDay!.month}月${_selectedDay!.day}日の記録',
+                      'Workouts on ${_selectedDay!.month}/${_selectedDay!.day}',
+                    ),
+              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
+            ),
+            if (_selectedDay != null && shownRows.isEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 24),
+                child: Center(
+                  child: Text(
+                    label(context, 'この日の記録はありません', 'No workouts on this day'),
+                  ),
+                ),
+              ),
+            for (final r in shownRows)
               ListTile(
                 selected: r['id'] == row?['id'],
                 title: Text(dateLabel(socialWorkout(r))),

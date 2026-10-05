@@ -45,6 +45,8 @@ class SetkeepNavigation extends StatelessWidget {
                       child: AnimatedContainer(
                         key: ValueKey('selectedTab$i'),
                         duration: const Duration(milliseconds: 150),
+                        width: 71,
+                        height: 57,
                         padding: const EdgeInsets.symmetric(
                           horizontal: 8,
                           vertical: 7,
@@ -56,28 +58,31 @@ class SetkeepNavigation extends StatelessWidget {
                           borderRadius: BorderRadius.circular(16),
                         ),
                         child: ExcludeSemantics(
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(
-                                i == selectedIndex
-                                    ? selectedIcons[i]
-                                    : icons[i],
-                                size: 24,
-                                color: AppColors.ink,
-                              ),
-                              const SizedBox(height: 3),
-                              Text(
-                                labels[i],
-                                style: TextStyle(
-                                  fontSize: 11,
+                          child: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  i == selectedIndex
+                                      ? selectedIcons[i]
+                                      : icons[i],
+                                  size: 24,
                                   color: AppColors.ink,
-                                  fontWeight: i == selectedIndex
-                                      ? FontWeight.w700
-                                      : FontWeight.w500,
                                 ),
-                              ),
-                            ],
+                                const SizedBox(height: 3),
+                                Text(
+                                  labels[i],
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: AppColors.ink,
+                                    fontWeight: i == selectedIndex
+                                        ? FontWeight.w700
+                                        : FontWeight.w500,
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
                         ),
                       ),
