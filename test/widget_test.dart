@@ -1688,12 +1688,15 @@ void main() {
     final trainerEntry = tester.widget<ListTile>(
       find.byKey(const Key('trainerQrButton')),
     );
-    expect(trainerEntry.enabled, isFalse);
-    expect(trainerEntry.onTap, isNull);
+    expect(trainerEntry.enabled, isTrue);
+    expect(trainerEntry.onTap, isNotNull);
     expect(find.text('準備中'), findsOneWidget);
     await tester.tap(find.byKey(const Key('trainerQrButton')));
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('trainerSharingPage')), findsNothing);
+    expect(find.byKey(const Key('trainerComingSoonDialog')), findsOneWidget);
+    await tester.tap(find.text('閉じる'));
+    await tester.pumpAndSettle();
 
     await tester.ensureVisible(
       find.byKey(const Key('backupDataManagementButton')),

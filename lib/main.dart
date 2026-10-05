@@ -1,3 +1,4 @@
+import 'trainer/trainer_coming_soon.dart';
 import 'config/trainer_release.dart';
 import 'design/workout_month_calendar.dart';
 import 'profile/profile_preference.dart';
@@ -12195,7 +12196,6 @@ class ProfilePage extends StatelessWidget {
               key: const Key('trainerQrButton'),
               leading: const Icon(Icons.qr_code_scanner_rounded),
               title: const Text('SETKEEP TRAINERと連携'),
-              enabled: trainerPublicAccessEnabled,
               subtitle: Text(
                 trainerPublicAccessEnabled
                     ? (Localizations.localeOf(context).languageCode == 'en'
@@ -12207,7 +12207,7 @@ class ProfilePage extends StatelessWidget {
               ),
               trailing: trainerPublicAccessEnabled
                   ? const Icon(Icons.chevron_right_rounded)
-                  : null,
+                  : const Icon(Icons.info_outline_rounded),
               onTap: trainerPublicAccessEnabled
                   ? () => Navigator.of(context).push<void>(
                       MaterialPageRoute(
@@ -12217,7 +12217,7 @@ class ProfilePage extends StatelessWidget {
                         ),
                       ),
                     )
-                  : null,
+                  : () => showTrainerComingSoon(context),
             ),
           ),
           _sectionTitle('その他設定'),
