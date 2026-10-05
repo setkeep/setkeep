@@ -11,6 +11,11 @@ import 'support/trainer_delivery_flow.dart' show DeliveryRepository;
 class CommentFriends extends FakeFriends {
   @override
   String get userId => 'user-a';
+  @override
+  Future<List<Map<String, dynamic>>> feed({String? owner}) async => [
+    for (final row in await super.feed(owner: owner))
+      {...row, 'user_id': userId},
+  ];
 }
 
 class CommentInbox extends FriendCommentInboxRepository {
@@ -48,6 +53,11 @@ void main() {
         'id': 'c1',
         'user_id': 'friend',
         'body': 'Synthetic friend comment',
+        'created_at': '2026-10-04T00:00:00Z',
+        'friend_profiles': {
+          'display_name': 'Synthetic friend',
+          'avatar_path': null,
+        },
       });
       final inbox = CommentInbox(friends);
       final trainer = DeliveryRepository();
@@ -91,6 +101,9 @@ void main() {
       tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
       await tester.pumpAndSettle();
       expect(find.text('Synthetic friend comment'), findsNothing);
+      expect(find.text('This thread is unavailable'), findsOneWidget);
+      await tester.pageBack();
+      await tester.pumpAndSettle();
       expect(find.text('No visible workouts'), findsOneWidget);
       await tester.pageBack();
       await tester.pumpAndSettle();

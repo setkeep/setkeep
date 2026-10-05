@@ -17,6 +17,7 @@ import 'ads/setkeep_banner_ad.dart';
 import 'ads/workout_interstitial.dart';
 import 'trainer/trainer_inbox_repository.dart';
 import 'friends/friend_comment_inbox.dart';
+import 'friends/workout_comments.dart';
 import 'friends/notification_sources_page.dart';
 import 'design/family_theme.dart';
 import 'gym/place_equipment_pages.dart';
@@ -554,8 +555,8 @@ class OnboardingPreference {
 }
 
 class LegalDocuments {
-  static const termsVersion = 'terms-1.0';
-  static const privacyVersion = 'privacy-1.0';
+  static const termsVersion = 'terms-1.2';
+  static const privacyVersion = 'privacy-1.2';
   // These can later be served at public URLs without changing consent storage.
   static const String? termsUrl = null;
   static const String? privacyUrl = null;
@@ -1118,7 +1119,7 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
     _lastFriendOwner = _friendOwner;
     WidgetsBinding.instance.addObserver(this);
     _historyReady = _loadHistory();
-    FriendInviteStore.pending.addListener(_showFriendInvite);
+    FriendInviteStore.revision.addListener(_showFriendInvite);
     unawaited(FriendInviteStore.start().then((_) => _showFriendInvite()));
     unawaited(_historyReady.then((_) => _syncTrainerHistory()));
     unawaited(_retryFriendDeletions());
@@ -1189,16 +1190,21 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
 
   @override
   void dispose() {
-    FriendInviteStore.pending.removeListener(_showFriendInvite);
+    FriendInviteStore.revision.removeListener(_showFriendInvite);
     WidgetsBinding.instance.removeObserver(this);
     _trainerAuthSubscription?.cancel();
     _friendDeletionRetry?.cancel();
     super.dispose();
   }
 
+  int? _presentedFriendInviteRevision;
+
   void _showFriendInvite() {
     final code = FriendInviteStore.pending.value;
+    final revision = FriendInviteStore.revision.value;
+    if (code == null) _presentedFriendInviteRevision = null;
     if (code == null ||
+        revision == _presentedFriendInviteRevision ||
         _openingFriendInvite ||
         !mounted ||
         configuredFriends() == null) {
@@ -1211,7 +1217,7 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
         if (!mounted) return;
         final repo = configuredFriends();
         if (repo == null) return;
-        await FriendInviteStore.consume(code);
+        _presentedFriendInviteRevision = revision;
         if (!mounted) return;
         await Navigator.of(context).push(
           MaterialPageRoute(
@@ -5459,6 +5465,11 @@ class WorkoutDetailPage extends StatelessWidget {
           ],
           const SizedBox(height: 10),
           _WorkoutDetailSummary(workout: workout),
+          if (configuredFriends() != null && workout.trainerWorkoutId == null)
+            HistoryWorkoutCommentsEntry(
+              repository: configuredFriends()!,
+              clientId: workout.date.toIso8601String(),
+            ),
           if (workout.note.isNotEmpty) ...[
             const SizedBox(height: 16),
             Container(
@@ -11892,7 +11903,8 @@ class _ProfileNameCardState extends State<_ProfileNameCard> {
 
   Future<void> _load() async {
     try {
-      final name = await ProfilePreference.load();
+      final initialRepo = configuredFriends();
+      final name = await ProfilePreference.load(owner: initialRepo?.userId);
       if (!mounted) return;
       setState(() {
         _name = name;
@@ -11901,6 +11913,15 @@ class _ProfileNameCardState extends State<_ProfileNameCard> {
       final repo = configuredFriends();
       final owner = repo?.userId;
       final profile = await repo?.profile();
+      if (repo != null &&
+          owner != null &&
+          repo.client.auth.currentUser?.id == owner &&
+          profile != null) {
+        await ProfilePreference.cacheServerName(
+          owner,
+          profile['display_name'] as String? ?? '',
+        );
+      }
       if (mounted &&
           (repo == null || repo.client.auth.currentUser?.id == owner)) {
         setState(() {
@@ -11929,7 +11950,8 @@ class _ProfileNameCardState extends State<_ProfileNameCard> {
 
     final saver = ProfileEditSaveCoordinator(
       checkAccount: checkAccount,
-      saveLocalName: ProfilePreference.setDisplayName,
+      saveLocalName: (name) =>
+          ProfilePreference.setDisplayName(name, owner: owner),
       saveRemote: repo == null
           ? null
           : (name, photoChanged, photo) async {
@@ -11941,7 +11963,7 @@ class _ProfileNameCardState extends State<_ProfileNameCard> {
                   displayName: name,
                 );
               } else {
-                await repo.ensureProfile(name);
+                await repo.saveDisplayName(name, expectedOwner: owner);
               }
             },
     );

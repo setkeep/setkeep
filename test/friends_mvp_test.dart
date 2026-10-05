@@ -22,6 +22,30 @@ class FakeFriends extends FriendsRepository {
   bool liked = false;
   bool accepted = false;
   bool removed = false;
+  int sharingAcknowledgements = 0;
+  @override
+  bool get supportsMutualFriendSharing => false;
+  @override
+  Future<String?> myInviteCode() async => 'ABCD2345';
+  @override
+  Future<void> acknowledgeMutualSharing() async {
+    sharingAcknowledgements++;
+    private = false;
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>> likerAvatars(String id) async => [
+    if (liked) {'user_id': 'me', 'avatar_path': null},
+  ];
+  @override
+  Future<Map<String, dynamic>?> workoutForRecord(String clientId) async =>
+      (await feed()).first;
+  @override
+  Future<Map<String, dynamic>?> workoutById(String id) async {
+    final matches = (await feed()).where((row) => row['id'] == id);
+    return matches.isEmpty ? null : matches.first;
+  }
+
   final messages = <Map<String, dynamic>>[];
   @override
   Future<void> publish(List<Map<String, dynamic>> records) async {}
@@ -29,7 +53,7 @@ class FakeFriends extends FriendsRepository {
   Future<Map<String, dynamic>?> profile() async => {
     'display_name': 'Me',
     'visibility': private ? 'private' : 'friends',
-    'invite_code': 'code',
+    'invite_code': 'ABCD2345',
   };
   @override
   Future<Map<String, dynamic>> ensureProfile(String name) async =>
@@ -83,7 +107,11 @@ class FakeFriends extends FriendsRepository {
   }
 
   @override
-  Future<List<Map<String, dynamic>>> comments(String id) async => messages;
+  Future<List<Map<String, dynamic>>> comments(String id) async {
+    if (fail) throw StateError('Access revoked');
+    return messages;
+  }
+
   @override
   Future<void> like(String id, bool value) async {
     liked = value;
@@ -91,8 +119,24 @@ class FakeFriends extends FriendsRepository {
 
   @override
   Future<void> comment(String id, String body) async {
-    messages.add({'id': 'c', 'body': body, 'user_id': 'me'});
+    messages.add({
+      'id': 'c',
+      'body': body,
+      'user_id': 'me',
+      'workout_id': id,
+      'created_at': '2026-10-05T12:00:00Z',
+      'friend_profiles': {'display_name': 'Me', 'avatar_path': null},
+    });
   }
+
+  @override
+  bool get supportsIdempotentComments => true;
+  @override
+  Future<void> sendComment(
+    String id,
+    String body, {
+    required String operationId,
+  }) => comment(id, body);
 
   @override
   Future<void> deleteComment(String id) async {
@@ -131,16 +175,25 @@ void main() {
       await t.tap(find.text('Like 1'));
       await t.pumpAndSettle();
       expect(repo.liked, false);
+      await t.ensureVisible(find.text('Comments 0'));
+      await t.tap(find.text('Comments 0'));
+      await t.pumpAndSettle();
       await t.ensureVisible(find.byType(TextField));
       await t.enterText(find.byType(TextField), 'Nice!');
-      await t.ensureVisible(find.text('Comment'));
-      await t.tap(find.text('Comment'));
+      await t.pumpAndSettle();
+      await t.ensureVisible(find.byKey(const Key('sendWorkoutComment')));
+      await t.tap(find.byKey(const Key('sendWorkoutComment')));
       await t.pumpAndSettle();
       expect(find.text('Nice!'), findsOneWidget);
-      await t.ensureVisible(find.byIcon(Icons.delete_outline));
-      await t.tap(find.byIcon(Icons.delete_outline));
+      await t.tap(find.byTooltip('Comment actions'));
+      await t.pumpAndSettle();
+      await t.tap(find.text('Delete'));
+      await t.pumpAndSettle();
+      await t.tap(find.text('Delete').last);
       await t.pumpAndSettle();
       expect(find.text('Nice!'), findsNothing);
+      await t.pageBack();
+      await t.pumpAndSettle();
       repo.fail = true;
       t.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
       await t.pumpAndSettle();
@@ -150,7 +203,7 @@ void main() {
     },
   );
   testWidgets(
-    'privacy defaults private and only recipient gets accept; removal refreshes',
+    'accept requires sharing confirmation and only recipient gets accept; removal refreshes',
     (t) async {
       final repo = FakeFriends();
       await t.pumpWidget(
@@ -160,17 +213,32 @@ void main() {
       );
       await t.pumpAndSettle();
       expect(repo.private, true);
+      await t.scrollUntilVisible(
+        find.byTooltip('Accept'),
+        250,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await t.pumpAndSettle();
       expect(find.text('Alice'), findsOneWidget);
-      await t.ensureVisible(find.byTooltip('Accept'));
       await t.tap(find.byTooltip('Accept'));
       await t.pumpAndSettle();
       expect(repo.accepted, false);
-      await t.tap(find.byKey(const Key('connectWithoutSharing')));
+      await t.tap(find.byKey(const Key('consentFriendsSharing')));
       await t.pumpAndSettle();
-      expect(repo.private, true);
+      expect(repo.private, false);
       expect(repo.accepted, true);
       expect(find.byTooltip('Accept'), findsNothing);
-      await t.tap(find.byTooltip('Remove / cancel'));
+      await t.scrollUntilVisible(
+        find.byTooltip('More'),
+        250,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await t.pumpAndSettle();
+      await t.tap(find.byTooltip('More'));
+      await t.pumpAndSettle();
+      await t.tap(find.text('Remove / cancel'));
+      await t.pumpAndSettle();
+      await t.tap(find.text('Remove'));
       await t.pumpAndSettle();
       expect(repo.removed, true);
       expect(find.text('Alice'), findsNothing);

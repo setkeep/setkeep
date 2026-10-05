@@ -1,7 +1,7 @@
-import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:setkeep/friends/friend_avatar.dart';
 import 'package:setkeep/friends/friend_invite.dart';
@@ -49,6 +49,28 @@ class InviteFriends extends FakeFriends {
   }
 }
 
+class MutualInviteFriends extends InviteFriends {
+  @override
+  bool get supportsMutualFriendSharing => true;
+  @override
+  Future<void> saveProfile(String name, String visibility) async {
+    throw StateError('New server must use owner consent RPC');
+  }
+}
+
+class OutgoingInviteFriends extends InviteFriends {
+  @override
+  Future<List<Map<String, dynamic>>> connections() async => [
+    {
+      'id': 'outgoing',
+      'requester': 'me',
+      'recipient': 'friend',
+      'status': 'pending',
+      'friend_name': 'Alice',
+    },
+  ];
+}
+
 class LegacyInviteFriends extends InviteFriends {
   @override
   bool get supportsProfileInvites => false;
@@ -60,12 +82,30 @@ class LegacyInviteFriends extends InviteFriends {
 const inviteCode = '71000000-0000-0000-0000-000000000001';
 const targetCode = '71000000-0000-0000-0000-000000000002';
 
+Future<void> showOnPage(WidgetTester tester, Finder target) async {
+  await tester.scrollUntilVisible(
+    target,
+    250,
+    scrollable: find.byType(Scrollable).first,
+  );
+  await tester.pumpAndSettle();
+  await tester.ensureVisible(target);
+  await tester.pumpAndSettle();
+}
+
 void main() {
   setUp(
     () => SharedPreferences.setMockInitialValues({
       'profile_display_name': 'My Page name',
     }),
   );
+  setUp(() {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(
+          const MethodChannel('com.llfbandit.app_links/events'),
+          (_) async => null,
+        );
+  });
   tearDown(FriendInviteStore.reset);
   testWidgets(
     'MVP-only invite confirms consent without calling unavailable preview RPC',
@@ -84,18 +124,18 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      await tester.ensureVisible(find.text('Send request'));
+      await showOnPage(tester, find.text('Send request'));
       await tester.tap(find.text('Send request'));
       await tester.pumpAndSettle();
       expect(
         find.text('Send a friend request using this invite code'),
         findsOneWidget,
       );
-      await tester.tap(find.byKey(const Key('connectWithoutSharing')));
+      await tester.tap(find.byKey(const Key('consentFriendsSharing')));
       await tester.pumpAndSettle();
       expect(repo.requested, targetCode);
-      expect(repo.private, isTrue);
-      expect(repo.publications, 0);
+      expect(repo.private, isFalse);
+      expect(repo.publications, 1);
     },
   );
   test(
@@ -199,9 +239,10 @@ void main() {
     },
   );
   testWidgets(
-    'settings reuses My Page name, cancels consent, and preserves private records',
+    'C settings omits own profile/privacy cards and cancellation preserves pending invite',
     (t) async {
       final repo = InviteFriends();
+      await FriendInviteStore.capture('setkeep://friend-invite/$targetCode');
       await t.pumpWidget(
         MaterialApp(
           home: FriendsSettingsPage(
@@ -212,14 +253,16 @@ void main() {
         ),
       );
       await t.pumpAndSettle();
-      expect(repo.nameReceived, 'My Page name');
-      expect(find.text('My Page name'), findsOneWidget);
+      expect(find.text('My Page name'), findsNothing);
+      expect(find.text('Friends & privacy'), findsNothing);
+      expect(find.text('Record visibility'), findsNothing);
       expect(find.byType(DropdownButtonFormField<String>), findsNothing);
       expect(
         find.byType(TextField),
         findsOneWidget,
       ); // Invite only, no duplicate name.
-      await t.ensureVisible(find.text('Send request'));
+      await showOnPage(t, find.text('Send request'));
+      await showOnPage(t, find.text('Send request'));
       await t.tap(find.text('Send request'));
       await t.pumpAndSettle();
       expect(
@@ -229,13 +272,18 @@ void main() {
       await t.tap(find.text('Cancel'));
       await t.pumpAndSettle();
       expect(repo.requested, isNull);
-      await t.tap(find.text('Send request'));
-      await t.pumpAndSettle();
-      await t.tap(find.byKey(const Key('connectWithoutSharing')));
-      await t.pumpAndSettle();
-      expect(repo.requested, targetCode);
       expect(repo.private, isTrue);
       expect(repo.publications, 0);
+      expect(FriendInviteStore.pending.value, targetCode);
+      expect(find.byKey(const Key('connectWithoutSharing')), findsNothing);
+      await showOnPage(t, find.text('Send request'));
+      await t.tap(find.text('Send request'));
+      await t.pumpAndSettle();
+      await t.tap(find.byKey(const Key('consentFriendsSharing')));
+      await t.pumpAndSettle();
+      expect(repo.requested, targetCode);
+      expect(repo.private, isFalse);
+      expect(repo.publications, 1);
     },
   );
   testWidgets(
@@ -252,7 +300,8 @@ void main() {
         ),
       );
       await t.pumpAndSettle();
-      await t.ensureVisible(find.text('Send request'));
+      await showOnPage(t, find.text('Send request'));
+      await showOnPage(t, find.text('Send request'));
       await t.tap(find.text('Send request'));
       await t.pumpAndSettle();
       await t.tap(find.byKey(const Key('consentFriendsSharing')));
@@ -262,6 +311,7 @@ void main() {
       repo.requested = null;
       repo.relationship = 'accepted';
       await t.enterText(find.byType(TextField), targetCode);
+      await showOnPage(t, find.text('Send request'));
       await t.tap(find.text('Send request'));
       await t.pumpAndSettle();
       expect(repo.requested, isNull);
@@ -271,6 +321,53 @@ void main() {
       );
     },
   );
+  testWidgets(
+    'new server consent acknowledges only after explicit confirmation',
+    (t) async {
+      final repo = MutualInviteFriends();
+      await t.pumpWidget(
+        MaterialApp(
+          home: FriendsSettingsPage(
+            repository: repo,
+            history: const [],
+            initialInvite: targetCode,
+          ),
+        ),
+      );
+      await t.pumpAndSettle();
+      expect(repo.sharingAcknowledgements, 0);
+      expect(repo.private, isTrue);
+      await showOnPage(t, find.text('Send request'));
+      await showOnPage(t, find.text('Send request'));
+      await t.tap(find.text('Send request'));
+      await t.pumpAndSettle();
+      expect(repo.sharingAcknowledgements, 0);
+      await t.tap(find.byKey(const Key('consentFriendsSharing')));
+      await t.pumpAndSettle();
+      expect(repo.sharingAcknowledgements, 1);
+      expect(repo.requested, targetCode);
+      expect(repo.publications, 1);
+      expect(t.takeException(), isNull);
+    },
+  );
+
+  testWidgets('outgoing request exposes cancellation without accept action', (
+    t,
+  ) async {
+    final repo = OutgoingInviteFriends();
+    await t.pumpWidget(
+      MaterialApp(
+        home: FriendsSettingsPage(repository: repo, history: const []),
+      ),
+    );
+    await t.pumpAndSettle();
+    expect(find.byTooltip('Accept'), findsNothing);
+    await showOnPage(t, find.text('Alice'));
+    expect(find.text('Pending'), findsOneWidget);
+    expect(repo.accepted, isFalse);
+    expect(repo.private, isTrue);
+  });
+
   testWidgets('invalid and self invites do not form connections', (t) async {
     final repo = InviteFriends();
     await t.pumpWidget(
@@ -279,12 +376,14 @@ void main() {
       ),
     );
     await t.pumpAndSettle();
-    await t.ensureVisible(find.text('Send request'));
+    await showOnPage(t, find.text('Send request'));
     await t.enterText(find.byType(TextField), inviteCode);
+    await showOnPage(t, find.text('Send request'));
     await t.tap(find.text('Send request'));
     await t.pumpAndSettle();
     expect(repo.requested, isNull);
     await t.enterText(find.byType(TextField), 'invalid');
+    await showOnPage(t, find.text('Send request'));
     await t.tap(find.text('Send request'));
     await t.pumpAndSettle();
     expect(find.text('Enter a valid invite code or link'), findsOneWidget);

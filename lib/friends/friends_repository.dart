@@ -12,6 +12,10 @@ class FriendsRepository {
   final FriendSnapshotJournal _journal;
   String get userId => client.auth.currentUser!.id;
   bool? _profileInvitesAvailable;
+  bool _mutualSharingAvailable = false;
+  bool _idempotentCommentsAvailable = false;
+  bool get supportsIdempotentComments => _idempotentCommentsAvailable;
+  bool get supportsMutualFriendSharing => _mutualSharingAvailable;
   bool get supportsProfileInvites => _profileInvitesAvailable ?? false;
 
   Future<Map<String, dynamic>?> profile() async {
@@ -20,9 +24,12 @@ class FriendsRepository {
         .select()
         .eq('user_id', userId)
         .maybeSingle();
-    // SELECT * works with the already deployed MVP schema. No probe of a
-    // missing column/RPC and no production migration is needed for this build.
+    // SELECT * also works with legacy schemas. New RPCs are called only when
+    // their additive capability column is present.
     _profileInvitesAvailable = result?.containsKey('avatar_path') ?? false;
+    _mutualSharingAvailable =
+        result?.containsKey('sharing_consent_version') ?? false;
+    _idempotentCommentsAvailable = result?['comment_idempotency_version'] == 1;
     return result;
   }
 
@@ -43,42 +50,92 @@ class FriendsRepository {
     }
   }
 
-  /// Name synchronization never changes the existing sharing choice.
+  /// Background refresh uses the server name; an empty/stale device cache must
+  /// never rename an existing account or change its sharing permission.
   Future<Map<String, dynamic>> ensureProfile(String name) async {
     final owner = userId;
-    final displayName = ProfilePreference.socialName(name);
     var existing = await profile();
-    if (client.auth.currentUser?.id != owner) {
-      throw StateError('Account changed');
-    }
+    _requireOwner(owner);
     if (existing == null) {
       try {
         await client.from('friend_profiles').insert({
           'user_id': owner,
-          'display_name': displayName,
+          'display_name': ProfilePreference.socialName(name),
         });
       } on PostgrestException catch (e) {
-        if (e.code != '23505') rethrow; // Another device may have created it.
+        if (e.code != '23505') rethrow;
       }
+      _requireOwner(owner);
       existing = await profile();
     }
     if (existing == null) throw StateError('Profile unavailable');
+    _requireOwner(owner);
+    await ProfilePreference.cacheServerName(
+      owner,
+      existing['display_name'] as String? ?? '',
+    );
+    _requireOwner(owner);
+    return existing;
+  }
+
+  void _requireOwner(String owner) {
     if (client.auth.currentUser?.id != owner) {
       throw StateError('Account changed');
     }
-    if (existing['display_name'] != displayName) {
-      await client
-          .from('friend_profiles')
-          .update({'display_name': displayName})
-          .eq('user_id', owner);
-    }
-    return {...existing, 'display_name': displayName};
   }
 
-  Future<Map<String, dynamic>> invitePreview(String code) async =>
-      Map<String, dynamic>.from(
-        await client.rpc('lookup_friend_invite', params: {'code': code}),
-      );
+  /// Only the explicit My Page editor may rename an existing cloud profile.
+  Future<void> saveDisplayName(String name, {String? expectedOwner}) async {
+    final owner = expectedOwner ?? userId;
+    _requireOwner(owner);
+    await ensureProfile(await ProfilePreference.load(owner: owner));
+    _requireOwner(owner);
+    await client
+        .from('friend_profiles')
+        .update({'display_name': ProfilePreference.socialName(name)})
+        .eq('user_id', owner);
+    _requireOwner(owner);
+  }
+
+  /// Called after the individual confirms mutual friend sharing. This grants
+  /// only that owner's permission; migration/profile refresh never grants it.
+  Future<void> acknowledgeMutualSharing() async {
+    final owner = userId;
+    if (!_mutualSharingAvailable) await profile();
+    _requireOwner(owner);
+    if (!supportsMutualFriendSharing) {
+      throw StateError('Friend sharing update unavailable');
+    }
+    await client.rpc(
+      'acknowledge_mutual_friend_sharing',
+      params: {'consent_version': 'privacy-1.2'},
+    );
+    _requireOwner(owner);
+  }
+
+  Future<String?> myInviteCode() async {
+    final owner = userId;
+    final row = await profile();
+    _requireOwner(owner);
+    if (!supportsMutualFriendSharing) return row?['invite_code'] as String?;
+    final code = await client.rpc('my_friend_invite_code');
+    _requireOwner(owner);
+    return code as String;
+  }
+
+  Future<Map<String, dynamic>> invitePreview(String code) async {
+    if (_profileInvitesAvailable == null) await profile();
+    final result = Map<String, dynamic>.from(
+      await client.rpc(
+        supportsMutualFriendSharing
+            ? 'lookup_friend_invite_v2'
+            : 'lookup_friend_invite',
+        params: {'code': code.trim()},
+      ),
+    );
+    if (result['ok'] == false) throw StateError('Invite unavailable');
+    return result;
+  }
 
   Future<String> avatarUrl(String path) =>
       client.storage.from('friend-avatars').createSignedUrl(path, 60);
@@ -238,7 +295,14 @@ class FriendsRepository {
   }
 
   Future<void> request(String code) async {
-    await client.rpc('request_friend', params: {'code': code.trim()});
+    if (_profileInvitesAvailable == null) await profile();
+    final result = await client.rpc(
+      supportsMutualFriendSharing ? 'request_friend_v2' : 'request_friend',
+      params: {'code': code.trim()},
+    );
+    if (result is Map && result['ok'] == false) {
+      throw StateError('Invite unavailable');
+    }
   }
 
   Future<void> accept(String id) async {
@@ -293,11 +357,63 @@ class FriendsRepository {
         .limit(1000);
   }
 
-  Future<List<Map<String, dynamic>>> comments(String id) async => await client
-      .from('friend_comments')
-      .select()
-      .eq('workout_id', id)
-      .order('created_at');
+  /// Exact RLS-protected lookup also works beyond the history feed's page size.
+  Future<Map<String, dynamic>?> workoutById(String id) async =>
+      await client.from('friend_workouts').select().eq('id', id).maybeSingle();
+
+  Future<Map<String, dynamic>?> workoutForRecord(String clientId) async =>
+      await client
+          .from('friend_workouts')
+          .select()
+          .eq('user_id', userId)
+          .eq('client_id', clientId)
+          .maybeSingle();
+
+  Future<List<Map<String, dynamic>>> comments(String id) async {
+    if (_profileInvitesAvailable == null) await profile();
+    if (supportsMutualFriendSharing) {
+      final rows = List<Map<String, dynamic>>.from(
+        await client.rpc(
+          'friend_comment_thread',
+          params: {'target_workout_id': id},
+        ),
+      );
+      return rows
+          .map(
+            (row) => {
+              ...row,
+              'friend_profiles': {
+                'display_name': row['display_name'],
+                'avatar_path': row['avatar_path'],
+              },
+            },
+          )
+          .toList();
+    }
+    return await client
+        .from('friend_comments')
+        .select()
+        .eq('workout_id', id)
+        .order('created_at');
+  }
+
+  Future<List<Map<String, dynamic>>> likerAvatars(String id) async {
+    if (_profileInvitesAvailable == null) await profile();
+    if (supportsMutualFriendSharing) {
+      return List<Map<String, dynamic>>.from(
+        await client.rpc(
+          'friend_liker_avatars',
+          params: {'target_workout_id': id},
+        ),
+      );
+    }
+    final rows = await client
+        .from('friend_likes')
+        .select('user_id')
+        .eq('workout_id', id);
+    return rows.map((row) => {...row, 'avatar_path': null}).toList();
+  }
+
   Future<void> like(String id, bool liked) async {
     if (liked) {
       await client.from('friend_likes').insert({
@@ -311,6 +427,40 @@ class FriendsRepository {
           .eq('workout_id', id)
           .eq('user_id', userId);
     }
+  }
+
+  /// A failed/lost response must be retried with the same operation ID and
+  /// exact draft. The server binds it to author/workout/body and rejects replay
+  /// after deletion or revoked access. Legacy inserts remain separate.
+  Future<void> sendComment(
+    String id,
+    String body, {
+    required String operationId,
+  }) async {
+    final owner = userId;
+    final text = body.trim();
+    if (text.isEmpty || text.runes.length > 140) {
+      throw ArgumentError('1–140 characters required');
+    }
+    if (!RegExp(
+      r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$',
+    ).hasMatch(operationId)) {
+      throw ArgumentError('Operation ID required');
+    }
+    if (_profileInvitesAvailable == null) await profile();
+    _requireOwner(owner);
+    if (!supportsIdempotentComments) {
+      throw StateError('Comment retry safety update unavailable');
+    }
+    await client.rpc(
+      'send_friend_comment',
+      params: {
+        'target_workout_id': id,
+        'body': text,
+        'operation_id': operationId,
+      },
+    );
+    _requireOwner(owner);
   }
 
   Future<void> comment(String id, String body) async {

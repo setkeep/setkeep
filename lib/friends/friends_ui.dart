@@ -8,13 +8,19 @@ import '../profile/profile_preference.dart';
 import 'friend_avatar.dart';
 import 'friend_invite.dart';
 import 'friend_comment_inbox.dart';
+import 'workout_comments.dart';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../config/supabase_config.dart';
-import '../main.dart' show WorkoutRecord, BodyMapPage;
+import '../main.dart'
+    show
+        WorkoutRecord,
+        BodyMapPage,
+        LegalConsentPreference,
+        ExerciseRecordTypeUi;
 import 'friends_repository.dart';
 
 FriendsRepository? configuredFriends() =>
@@ -123,7 +129,13 @@ class _FriendsSectionState extends State<FriendsSection>
   Future<void> refresh() async {
     final generation = ++refreshGeneration;
     try {
-      await repo?.ensureProfile(await ProfilePreference.load());
+      await repo?.ensureProfile(
+        await ProfilePreference.load(owner: repo?.userId),
+      );
+      if (repo?.supportsMutualFriendSharing == true &&
+          await LegalConsentPreference.load()) {
+        await repo!.acknowledgeMutualSharing();
+      }
       if (widget.historyReady) {
         await repo?.publish(widget.history.map((w) => w.toJson()).toList());
       }
@@ -159,7 +171,7 @@ class _FriendsSectionState extends State<FriendsSection>
             ),
           ),
           IconButton(
-            tooltip: label(context, 'フレンド・公開範囲', 'Friends & privacy'),
+            tooltip: label(context, 'フレンド', 'Friends'),
             icon: const Icon(Icons.people_outline),
             onPressed: repo == null
                 ? null
@@ -202,8 +214,30 @@ class _FriendsSectionState extends State<FriendsSection>
               path: (row['friend_profiles'] as Map?)?['avatar_path'] as String?,
             ),
             title: Text(friendName(row)),
-            subtitle: Text(
-              '${dateLabel(socialWorkout(row))} · ${socialWorkout(row).summaryLabel}\n${label(context, 'コメント', 'Comments')} ${(row['friend_comments'] as List?)?.length ?? 0}',
+            subtitle: Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Wrap(
+                spacing: 10,
+                runSpacing: 4,
+                children: [
+                  Text(dateLabel(socialWorkout(row))),
+                  Text(
+                    '${socialWorkout(row).exerciseNames.length} ${label(context, '種目', 'exercises')}',
+                  ),
+                  Text(
+                    '${socialWorkout(row).sets.where((set) => set.recordType.usesSets).length} ${label(context, 'セット', 'sets')}',
+                  ),
+                  for (final metric in socialWorkout(
+                    row,
+                  ).summaryLabel.split(' ・ '))
+                    if (metric.endsWith(' kg') ||
+                        metric == socialWorkout(row).durationLabel)
+                      Text(metric),
+                  Text(
+                    '${label(context, 'コメント', 'Comments')} ${(row['friend_comments'] as List?)?.length ?? 0}',
+                  ),
+                ],
+              ),
             ),
             trailing: const Icon(Icons.chevron_right),
             onTap: () async {
@@ -241,9 +275,19 @@ class FriendsSettingsPage extends StatefulWidget {
 class _FriendsSettingsPageState extends State<FriendsSettingsPage>
     with WidgetsBindingObserver {
   final code = TextEditingController();
-  String visibility = 'private';
+  late final String _viewer = widget.repository.userId;
+  StreamSubscription<dynamic>? _auth;
+  bool get _sameViewer {
+    try {
+      return widget.repository.userId == _viewer;
+    } catch (_) {
+      return false;
+    }
+  }
+
   String displayName = ProfilePreference.defaultDisplayName;
   String? invite;
+  Map<String, dynamic>? preview;
   List<Map<String, dynamic>> connections = [];
   bool busy = false;
   bool loaded = false;
@@ -252,6 +296,9 @@ class _FriendsSettingsPageState extends State<FriendsSettingsPage>
     super.initState();
     code.text = widget.initialInvite ?? '';
     WidgetsBinding.instance.addObserver(this);
+    _auth = widget.repository.client.auth.onAuthStateChange.listen(
+      (_) => run(load),
+    );
     run(load);
   }
 
@@ -263,23 +310,35 @@ class _FriendsSettingsPageState extends State<FriendsSettingsPage>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _auth?.cancel();
     code.dispose();
     super.dispose();
   }
 
   Future<void> load() async {
+    if (!_sameViewer) throw StateError('Account changed');
     final profile = await widget.repository.ensureProfile(
-      await ProfilePreference.load(),
+      await ProfilePreference.load(owner: widget.repository.userId),
     );
     final items = await widget.repository.connections();
+    final ownCode = await widget.repository.myInviteCode();
+    if (!_sameViewer) throw StateError('Account changed');
     if (!mounted) return;
     setState(() {
       displayName = profile['display_name'] as String;
-      visibility = profile['visibility'] as String? ?? 'private';
-      invite = profile['invite_code'] as String?;
+      invite = ownCode;
       connections = items;
       loaded = true;
     });
+    if (widget.initialInvite != null &&
+        preview == null &&
+        widget.repository.supportsProfileInvites) {
+      final result = await widget.repository.invitePreview(
+        widget.initialInvite!,
+      );
+      if (!_sameViewer) throw StateError('Account changed');
+      if (mounted) setState(() => preview = result);
+    }
   }
 
   void message(String ja, String en) {
@@ -293,8 +352,17 @@ class _FriendsSettingsPageState extends State<FriendsSettingsPage>
     if (busy || !mounted) return;
     setState(() => busy = true);
     try {
+      if (!_sameViewer) throw StateError('Account changed');
       await action();
     } catch (_) {
+      if (!_sameViewer && mounted) {
+        setState(() {
+          invite = null;
+          connections = [];
+          preview = null;
+          loaded = false;
+        });
+      }
       message(
         '操作できませんでした。接続・入力を確認して再試行してください',
         'Could not complete. Check connection and input, then retry',
@@ -311,8 +379,8 @@ class _FriendsSettingsPageState extends State<FriendsSettingsPage>
       content: Text(
         label(
           context,
-          '記録を共有すると、過去と今後のトレーニングの日時・種目・セット・所要時間が、承認済みのフレンド全員に公開されます。場所・メモ・体重は共有しません。',
-          'Sharing makes past and future workout dates, exercises, sets and duration visible to all approved friends. Locations, notes and body weight stay private.',
+          '相互承認したフレンドと、過去と今後のトレーニングの日時・種目・セット・所要時間を共有します。場所・メモ・体重は共有しません。',
+          'Mutually approved friends share past and future workout dates, exercises, sets and duration. Locations, notes and body weight stay private.',
         ),
       ),
       actions: [
@@ -320,20 +388,10 @@ class _FriendsSettingsPageState extends State<FriendsSettingsPage>
           onPressed: () => Navigator.pop(context),
           child: Text(label(context, 'キャンセル', 'Cancel')),
         ),
-        if (visibility == 'private')
-          TextButton(
-            key: const Key('connectWithoutSharing'),
-            onPressed: () => Navigator.pop(context, false),
-            child: Text(
-              label(context, '記録を共有せず続ける', 'Continue without sharing'),
-            ),
-          ),
         FilledButton(
           key: const Key('consentFriendsSharing'),
           onPressed: () => Navigator.pop(context, true),
-          child: Text(
-            label(context, '記録を共有して続ける', 'Continue and share workouts'),
-          ),
+          child: Text(label(context, '確認して続ける', 'Confirm and continue')),
         ),
       ],
     ),
@@ -343,19 +401,20 @@ class _FriendsSettingsPageState extends State<FriendsSettingsPage>
     String ja,
     String en,
   ) async {
-    final share = await consent(ja, en);
-    if (share == null || !mounted) return;
+    if (await consent(ja, en) != true || !mounted) return;
     await run(() async {
-      await action();
-      if (share && visibility == 'private') {
+      if (widget.repository.supportsMutualFriendSharing) {
+        await widget.repository.acknowledgeMutualSharing();
+      } else {
+        // Older servers still enforce their original per-owner sharing choice.
+        // This explicit confirmation grants only the current owner's sharing.
         await widget.repository.saveProfile(displayName, 'friends');
-        visibility = 'friends';
       }
-      if (visibility == 'friends') {
-        await widget.repository.publish(
-          widget.history.map((w) => w.toJson()).toList(),
-        );
-      }
+      if (!_sameViewer) throw StateError('Account changed');
+      await action();
+      await widget.repository.publish(
+        widget.history.map((w) => w.toJson()).toList(),
+      );
       await load();
     });
   }
@@ -370,25 +429,27 @@ class _FriendsSettingsPageState extends State<FriendsSettingsPage>
       message('自分の招待コードは使えません', 'You cannot use your own invite code');
       return;
     }
-    Map<String, dynamic>? preview;
+    Map<String, dynamic>? target;
     if (widget.repository.supportsProfileInvites) {
       await run(() async {
-        preview = await widget.repository.invitePreview(value);
+        target = await widget.repository.invitePreview(value);
       });
-      if (preview == null || !mounted) return;
+      if (target == null || !mounted) return;
     }
-    if (preview?['status'] != null) {
+    if (target?['status'] != null) {
       message(
         'この相手とは申請中またはフレンド登録済みです',
         'You already have a pending request or connection',
       );
       return;
     }
-    final friend = preview?['display_name'] as String?;
+    final friend = target?['display_name'] as String?;
     await connect(
       () async {
         await widget.repository.request(value);
+        await FriendInviteStore.consume(value);
         code.clear();
+        if (mounted) setState(() => preview = null);
       },
       friend == null ? '招待コードの相手にフレンド申請' : '$friend にフレンド申請',
       friend == null
@@ -397,196 +458,336 @@ class _FriendsSettingsPageState extends State<FriendsSettingsPage>
     );
   }
 
-  Future<void> sharing() async {
-    if (visibility == 'private') {
-      final share = await consent(
-        '承認済みフレンドに記録を共有',
-        'Share workouts with approved friends',
-      );
-      if (share != true || !mounted) return;
-    } else {
-      final confirm = await showDialog<bool>(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: Text(label(context, '記録を非公開にする', 'Make workouts private')),
-          content: Text(
-            label(
-              context,
-              '承認済みフレンドもトレーニングとリアクションを閲覧できなくなります。',
-              'Approved friends will lose access to workouts and reactions.',
-            ),
+  Future<void> remove(Map<String, dynamic> item) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(label(context, 'フレンド解除・申請取消', 'Remove / cancel')),
+        content: Text(
+          label(
+            context,
+            '${item['friend_name']} とのつながりを解除しますか？',
+            'Remove your connection with ${item['friend_name']}?',
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: Text(label(context, 'キャンセル', 'Cancel')),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(context, true),
-              child: Text(label(context, '非公開にする', 'Make private')),
-            ),
-          ],
         ),
-      );
-      if (confirm != true || !mounted) return;
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text(label(context, 'キャンセル', 'Cancel')),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: Text(label(context, '解除する', 'Remove')),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true && mounted) {
+      await run(() async {
+        await widget.repository.remove(item['id'] as String);
+        await load();
+      });
     }
-    await run(() async {
-      await widget.repository.saveProfile(
-        displayName,
-        visibility == 'private' ? 'friends' : 'private',
-      );
-      await widget.repository.publish(
-        widget.history.map((w) => w.toJson()).toList(),
-      );
-      await load();
-    });
   }
 
-  @override
-  Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(
-      title: Text(label(context, 'フレンド・公開範囲', 'Friends & privacy')),
+  Widget card({required Widget child, Color? color}) => Container(
+    padding: const EdgeInsets.all(20),
+    decoration: BoxDecoration(
+      color: color ?? Colors.white,
+      borderRadius: BorderRadius.circular(24),
     ),
-    body: RefreshIndicator(
-      onRefresh: () => run(load),
-      child: ListView(
-        physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.all(20),
-        children: [
-          if (busy) const LinearProgressIndicator(),
-          Text(
-            displayName,
-            style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
-          ),
-          Text(
-            label(
-              context,
-              widget.repository.supportsProfileInvites
-                  ? '表示名と写真はマイページで変更できます'
-                  : '表示名はマイページで変更できます',
-              widget.repository.supportsProfileInvites
-                  ? 'Edit your name and photo in My Page'
-                  : 'Edit your name in My Page',
-            ),
-          ),
-          const SizedBox(height: 16),
-          Card(
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(22),
-            ),
-            child: ListTile(
-              leading: const Icon(Icons.lock_outline),
-              title: Text(label(context, '記録の公開範囲', 'Workout privacy')),
-              subtitle: Text(
-                visibility == 'friends'
-                    ? label(context, '承認済みフレンドのみ', 'Approved friends only')
-                    : label(context, '非公開', 'Private'),
-              ),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: busy || !loaded ? null : sharing,
-            ),
-          ),
-          const SizedBox(height: 16),
-          if (invite != null) ...[
-            SelectableText(
-              '${label(context, 'あなたの招待コード', 'Your invite code')}\n$invite',
-            ),
-            Row(
-              children: [
-                TextButton.icon(
-                  onPressed: busy
-                      ? null
-                      : () async {
-                          final box = context.findRenderObject() as RenderBox?;
-                          await SharePlus.instance.share(
-                            ShareParams(
-                              text:
-                                  'SETKEEP\n${FriendInviteLink.url(invite!)}\n${label(context, '招待コード', 'Invite code')}: $invite',
-                              sharePositionOrigin: box == null
-                                  ? null
-                                  : box.localToGlobal(Offset.zero) & box.size,
-                            ),
-                          );
-                        },
-                  icon: const Icon(Icons.ios_share),
-                  label: Text(label(context, '招待を共有', 'Share invite')),
-                ),
-                TextButton.icon(
-                  onPressed: () =>
-                      Clipboard.setData(ClipboardData(text: invite!)),
-                  icon: const Icon(Icons.copy),
-                  label: Text(label(context, 'コピー', 'Copy')),
-                ),
-              ],
-            ),
-            TextField(
-              controller: code,
-              decoration: InputDecoration(
-                labelText: label(
-                  context,
-                  '相手の招待コード・リンク',
-                  'Friend’s invite code or link',
-                ),
-              ),
-            ),
-            FilledButton(
-              onPressed: busy ? null : request,
-              child: Text(label(context, 'フレンド申請', 'Send request')),
-            ),
-          ],
-          for (final item in connections)
-            Card(
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(22),
-              ),
-              child: ListTile(
-                leading: FriendAvatar(
-                  repository: widget.repository,
-                  path: item['avatar_path'] as String?,
-                ),
-                title: Text(item['friend_name'] as String),
-                subtitle: Text(
-                  item['status'] == 'accepted'
-                      ? label(context, '承認済みフレンド', 'Approved friend')
-                      : label(context, '承認待ち', 'Pending request'),
-                ),
-                trailing: Wrap(
+    child: child,
+  );
+  Widget heading(String ja, String en) => Text(
+    label(context, ja, en),
+    style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w900),
+  );
+  @override
+  Widget build(BuildContext context) {
+    final shortCode = invite != null && invite!.length == 8;
+    final approved = connections
+        .where((c) => c['status'] == 'accepted')
+        .toList();
+    final pending = connections
+        .where((c) => c['status'] != 'accepted')
+        .toList();
+    return Scaffold(
+      backgroundColor: const Color(0xFFF4F5F0),
+      appBar: AppBar(
+        title: Text(
+          label(context, 'フレンド', 'Friends'),
+          style: const TextStyle(fontWeight: FontWeight.w800),
+        ),
+      ),
+      body: SafeArea(
+        child: RefreshIndicator(
+          onRefresh: () => run(load),
+          child: ListView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: const EdgeInsets.all(20),
+            children: [
+              if (busy) const LinearProgressIndicator(),
+              card(
+                color: const Color(0xFFC7F36B),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    if (item['status'] == 'pending' &&
-                        item['recipient'] == widget.repository.userId)
-                      IconButton(
-                        tooltip: label(context, '承認', 'Accept'),
-                        onPressed: busy
-                            ? null
-                            : () => connect(
-                                () => widget.repository.accept(
-                                  item['id'] as String,
-                                ),
-                                '${item['friend_name']} の申請を承認',
-                                'Accept ${item['friend_name']}',
-                              ),
-                        icon: const Icon(Icons.check),
+                    heading('フレンドを招待', 'Invite a friend'),
+                    const SizedBox(height: 8),
+                    Text(
+                      label(
+                        context,
+                        'リンクを送って、記録を共有',
+                        'Send a link and share workouts',
                       ),
-                    IconButton(
-                      tooltip: label(context, '解除・申請取消', 'Remove / cancel'),
-                      onPressed: busy
-                          ? null
-                          : () => run(() async {
-                              await widget.repository.remove(
-                                item['id'] as String,
-                              );
-                              await load();
-                            }),
-                      icon: const Icon(Icons.close),
+                    ),
+                    const SizedBox(height: 20),
+                    SizedBox(
+                      width: double.infinity,
+                      child: FilledButton.icon(
+                        style: FilledButton.styleFrom(
+                          backgroundColor: const Color(0xFF101820),
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                        ),
+                        onPressed: busy || invite == null
+                            ? null
+                            : () async {
+                                final box =
+                                    context.findRenderObject() as RenderBox?;
+                                try {
+                                  await SharePlus.instance.share(
+                                    ShareParams(
+                                      text:
+                                          'SETKEEP\n${FriendInviteLink.url(invite!)}',
+                                      sharePositionOrigin: box == null
+                                          ? null
+                                          : box.localToGlobal(Offset.zero) &
+                                                box.size,
+                                    ),
+                                  );
+                                } catch (_) {
+                                  message(
+                                    '招待を共有できませんでした',
+                                    'Could not share invite',
+                                  );
+                                }
+                              },
+                        icon: const Icon(Icons.ios_share),
+                        label: Text(
+                          label(context, '招待リンクを共有', 'Share invite link'),
+                        ),
+                      ),
+                    ),
+                    if (!FriendInviteLink.supportsPublicLinks) ...[
+                      const SizedBox(height: 8),
+                      Text(
+                        label(
+                          context,
+                          '現在はインストール済みのアプリで開くリンクです。HTTPS招待ページは準備中です。',
+                          'This link opens an installed app. The HTTPS invite page is being prepared.',
+                        ),
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                    ],
+                    const Divider(height: 28),
+                    Text(label(context, 'あなたの招待コード', 'Your invite code')),
+                    if (shortCode)
+                      Wrap(
+                        spacing: 12,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          SelectableText(
+                            invite!,
+                            style: const TextStyle(
+                              fontSize: 28,
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: 1,
+                            ),
+                          ),
+                          TextButton.icon(
+                            onPressed: busy
+                                ? null
+                                : () async {
+                                    await Clipboard.setData(
+                                      ClipboardData(text: invite!),
+                                    );
+                                    message('コピーしました', 'Copied');
+                                  },
+                            icon: const Icon(Icons.copy),
+                            label: Text(label(context, 'コピー', 'Copy')),
+                          ),
+                        ],
+                      )
+                    else
+                      Text(
+                        label(
+                          context,
+                          '短い招待コードはサーバー更新後に利用できます。リンクで招待してください。',
+                          'Short invite codes need the server update. Share the link instead.',
+                        ),
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+              card(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    heading('コードから追加', 'Add by code'),
+                    const SizedBox(height: 8),
+                    Text(label(context, '相手の招待コード', 'Friend’s invite code')),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: code,
+                      enabled: !busy,
+                      autocorrect: false,
+                      enableSuggestions: false,
+                      onChanged: (_) => setState(() => preview = null),
+                      decoration: InputDecoration(
+                        hintText: label(
+                          context,
+                          '招待コード・リンクを入力',
+                          'Enter invite code or link',
+                        ),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                      ),
+                    ),
+                    if (preview != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 12),
+                        child: Text(
+                          label(
+                            context,
+                            '招待相手：${preview!['display_name']}',
+                            'Invited by ${preview!['display_name']}',
+                          ),
+                        ),
+                      ),
+                    const SizedBox(height: 12),
+                    SizedBox(
+                      width: double.infinity,
+                      child: FilledButton(
+                        style: FilledButton.styleFrom(
+                          backgroundColor: const Color(0xFF101820),
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                        ),
+                        onPressed: busy || !loaded ? null : request,
+                        child: Text(label(context, 'フレンド申請', 'Send request')),
+                      ),
                     ),
                   ],
                 ),
               ),
-            ),
-        ],
+              const SizedBox(height: 16),
+              for (final group in [pending, approved])
+                if (group.isNotEmpty || identical(group, approved)) ...[
+                  card(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        heading(
+                          identical(group, approved)
+                              ? 'フレンド ${group.length}'
+                              : '申請 ${group.length}',
+                          identical(group, approved)
+                              ? 'Friends ${group.length}'
+                              : 'Requests ${group.length}',
+                        ),
+                        const Divider(height: 24),
+                        if (group.isEmpty)
+                          Text(label(context, 'フレンドはまだいません', 'No friends yet')),
+                        for (final item in group)
+                          Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 6),
+                            child: Row(
+                              children: [
+                                FriendAvatar(
+                                  repository: widget.repository,
+                                  path: item['avatar_path'] as String?,
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        item['friend_name'] as String,
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.w800,
+                                        ),
+                                      ),
+                                      Text(
+                                        label(
+                                          context,
+                                          item['status'] == 'accepted'
+                                              ? '承認済み'
+                                              : '承認待ち',
+                                          item['status'] == 'accepted'
+                                              ? 'Approved'
+                                              : 'Pending',
+                                        ),
+                                        style: const TextStyle(
+                                          color: Colors.grey,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                if (item['status'] == 'pending' &&
+                                    item['recipient'] ==
+                                        widget.repository.userId)
+                                  IconButton(
+                                    tooltip: label(context, '承認', 'Accept'),
+                                    icon: const Icon(Icons.check),
+                                    onPressed: busy
+                                        ? null
+                                        : () => connect(
+                                            () => widget.repository.accept(
+                                              item['id'] as String,
+                                            ),
+                                            '${item['friend_name']} の申請を承認',
+                                            'Accept ${item['friend_name']}',
+                                          ),
+                                  ),
+                                PopupMenuButton<String>(
+                                  tooltip: label(context, 'その他', 'More'),
+                                  enabled: !busy,
+                                  onSelected: (_) => remove(item),
+                                  itemBuilder: (_) => [
+                                    PopupMenuItem(
+                                      value: 'remove',
+                                      child: Text(
+                                        label(
+                                          context,
+                                          '解除・申請取消',
+                                          'Remove / cancel',
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                  icon: const Icon(Icons.more_horiz),
+                                ),
+                              ],
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                ],
+            ],
+          ),
+        ),
       ),
-    ),
-  );
+    );
+  }
 }
 
 class FriendActivityPage extends StatefulWidget {
@@ -613,10 +814,10 @@ class _FriendActivityPageState extends State<FriendActivityPage>
     with WidgetsBindingObserver {
   List<Map<String, dynamic>> rows = [];
   List<Map<String, dynamic>> comments = [];
-  final text = TextEditingController();
   bool busy = false;
   Map<String, dynamic>? selected;
-  final _commentKey = GlobalKey();
+  List<Map<String, dynamic>> likerPhotos = [];
+  bool _notificationOpened = false;
   DateTime _visibleMonth = DateTime(DateTime.now().year, DateTime.now().month);
   DateTime? _selectedDay;
   bool _calendarInitialized = false;
@@ -644,7 +845,6 @@ class _FriendActivityPageState extends State<FriendActivityPage>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _auth?.cancel();
-    text.dispose();
     super.dispose();
   }
 
@@ -693,11 +893,19 @@ class _FriendActivityPageState extends State<FriendActivityPage>
     final messages = current == null
         ? <Map<String, dynamic>>[]
         : await widget.repository.comments(current['id'] as String);
+    var photos = <Map<String, dynamic>>[];
+    if (current != null) {
+      try {
+        photos = await widget.repository.likerAvatars(current['id'] as String);
+      } catch (_) {}
+    }
+    if (widget.repository.userId != _viewer) return;
     if (mounted) {
       setState(() {
         rows = result;
         selected = current;
         comments = messages;
+        likerPhotos = photos;
         if (!_calendarInitialized) {
           final date = current == null
               ? null
@@ -709,14 +917,12 @@ class _FriendActivityPageState extends State<FriendActivityPage>
           _calendarInitialized = true;
         }
       });
-      if (widget.commentNotificationId != null) {
+      if (widget.commentNotificationId != null &&
+          current != null &&
+          !_notificationOpened) {
+        _notificationOpened = true;
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          final target = _commentKey.currentContext;
-          if (mounted && target != null) {
-            Scrollable.ensureVisible(target);
-            final callback = widget.onCommentViewed;
-            if (callback != null) unawaited(callback());
-          }
+          if (mounted) unawaited(openComments(current));
         });
       }
     }
@@ -749,6 +955,22 @@ class _FriendActivityPageState extends State<FriendActivityPage>
     } finally {
       if (mounted) setState(() => busy = false);
     }
+  }
+
+  Future<void> openComments(Map<String, dynamic> row) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => WorkoutCommentsPage(
+          repository: widget.repository,
+          workoutId: row['id'] as String,
+          ownerId: widget.owner,
+          commentNotificationId: widget.commentNotificationId,
+          notificationRepository: widget.notificationRepository,
+          onCommentViewed: widget.onCommentViewed,
+        ),
+      ),
+    );
+    if (mounted) await run(load);
   }
 
   @override
@@ -892,66 +1114,41 @@ class _FriendActivityPageState extends State<FriendActivityPage>
                 ),
                 for (final set in group) Text(set.displaySummary),
               ],
-              TextButton.icon(
-                onPressed: busy
-                    ? null
-                    : () => run(() async {
-                        await widget.repository.like(
-                          row!['id'] as String,
-                          !liked,
-                        );
-                        await load();
-                      }),
-                icon: Icon(
-                  liked ? Icons.favorite : Icons.favorite_border,
-                  color: liked ? const Color(0xFFC7F36B) : null,
-                ),
-                label: Text('${label(context, 'いいね', 'Like')} ${likes.length}'),
-              ),
-              for (final message in comments)
-                ListTile(
-                  key: message['id'] == widget.commentNotificationId
-                      ? _commentKey
-                      : null,
-                  title: Text(message['body'] as String),
-                  subtitle: Text(
-                    message['user_id'] == widget.repository.userId
-                        ? label(context, 'あなた', 'You')
-                        : label(context, 'フレンド', 'Friend'),
+              Wrap(
+                crossAxisAlignment: WrapCrossAlignment.center,
+                spacing: 8,
+                children: [
+                  TextButton.icon(
+                    onPressed: busy
+                        ? null
+                        : () => run(() async {
+                            await widget.repository.like(
+                              row!['id'] as String,
+                              !liked,
+                            );
+                            await load();
+                          }),
+                    icon: Icon(
+                      liked ? Icons.favorite : Icons.favorite_border,
+                      color: liked ? const Color(0xFFC7F36B) : null,
+                    ),
+                    label: Text(
+                      '${label(context, 'いいね', 'Like')} ${likes.length}',
+                    ),
                   ),
-                  trailing: message['user_id'] != widget.repository.userId
-                      ? null
-                      : IconButton(
-                          icon: const Icon(Icons.delete_outline),
-                          onPressed: busy
-                              ? null
-                              : () => run(() async {
-                                  await widget.repository.deleteComment(
-                                    message['id'] as String,
-                                  );
-                                  await load();
-                                }),
-                        ),
-                ),
-              TextField(
-                controller: text,
-                maxLength: 140,
-                decoration: InputDecoration(
-                  labelText: label(context, '短いコメント', 'Short comment'),
-                ),
+                  LikeAvatarStrip(
+                    repository: widget.repository,
+                    likes: likerPhotos,
+                  ),
+                ],
               ),
-              FilledButton(
-                onPressed: busy
-                    ? null
-                    : () => run(() async {
-                        await widget.repository.comment(
-                          row!['id'] as String,
-                          text.text,
-                        );
-                        text.clear();
-                        await load();
-                      }),
-                child: Text(label(context, 'コメント', 'Comment')),
+              OutlinedButton.icon(
+                key: const Key('openWorkoutComments'),
+                icon: const Icon(Icons.chat_bubble_outline),
+                label: Text(
+                  '${label(context, 'コメント', 'Comments')} ${comments.length}',
+                ),
+                onPressed: busy ? null : () => openComments(row!),
               ),
             ],
           ],
