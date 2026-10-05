@@ -1,3 +1,4 @@
+import 'profile/profile_edit_dialog.dart';
 import 'trainer/trainer_coming_soon.dart';
 import 'config/trainer_release.dart';
 import 'design/workout_month_calendar.dart';
@@ -11897,9 +11898,14 @@ class _ProfileNameCardState extends State<_ProfileNameCard> {
         _name = name;
         _loaded = true;
       });
-      final profile = await configuredFriends()?.profile();
-      if (mounted) {
+      final repo = configuredFriends();
+      final owner = repo?.userId;
+      final profile = await repo?.profile();
+      if (mounted &&
+          (repo == null || repo.client.auth.currentUser?.id == owner)) {
         setState(() {
+          final cloudName = profile?['display_name'] as String?;
+          if (cloudName != null) _name = cloudName;
           _avatarPath = profile?['avatar_path'] as String?;
           _avatarAvailable = profile?.containsKey('avatar_path') ?? false;
         });
@@ -11911,111 +11917,63 @@ class _ProfileNameCardState extends State<_ProfileNameCard> {
   }
 
   Future<void> _edit() async {
+    if (_editing || !_loaded) return;
     setState(() => _editing = true);
-    var value = _name;
-    final result = await showDialog<String>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('表示名を編集'),
-        content: TextFormField(
-          key: const Key('profileDisplayNameField'),
-          initialValue: _name,
-          autofocus: true,
-          maxLength: 40,
-          textInputAction: TextInputAction.done,
-          decoration: const InputDecoration(
-            labelText: '表示名（任意）',
-            hintText: ProfilePreference.defaultDisplayName,
-          ),
-          onChanged: (text) => value = text,
-          onFieldSubmitted: (text) => Navigator.pop(dialogContext, text),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('キャンセル'),
-          ),
-          FilledButton(
-            key: const Key('saveProfileDisplayName'),
-            onPressed: () => Navigator.pop(dialogContext, value),
-            child: const Text('保存'),
-          ),
-        ],
-      ),
-    );
-    if (!mounted) return;
-    if (result != null) {
-      try {
-        await ProfilePreference.setDisplayName(result);
-        if (!mounted) return;
-        setState(() => _name = result.trim());
-        final repo = configuredFriends();
-        if (repo != null) await repo.ensureProfile(result);
-      } catch (_) {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('表示名を保存できませんでした。もう一度お試しください。')),
-        );
-      }
-    }
-    if (mounted) setState(() => _editing = false);
-  }
-
-  Future<void> _editAvatar() async {
     final repo = configuredFriends();
-    if (repo == null) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('写真の登録にはログインが必要です')));
-      return;
-    }
-    final owner = repo.userId;
-    final choice = await showModalBottomSheet<String>(
-      context: context,
-      builder: (context) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.photo_library_outlined),
-              title: const Text('写真を選ぶ'),
-              onTap: () => Navigator.pop(context, 'pick'),
-            ),
-            if (_avatarPath != null)
-              ListTile(
-                leading: const Icon(Icons.delete_outline),
-                title: const Text('写真を削除'),
-                onTap: () => Navigator.pop(context, 'remove'),
-              ),
-          ],
-        ),
-      ),
-    );
-    if (choice == null || !mounted) return;
-    setState(() => _editing = true);
-    try {
-      Uint8List? photo;
-      if (choice == 'pick') {
-        final picked = await image_picker.ImagePicker().pickImage(
-          source: image_picker.ImageSource.gallery,
-          maxWidth: 1024,
-          maxHeight: 1024,
-        );
-        if (picked == null) return;
-        photo = await prepareFriendAvatar(await picked.readAsBytes());
-      }
-      if (repo.client.auth.currentUser?.id != owner) {
+    final owner = repo?.userId;
+    void checkAccount() {
+      if (repo != null && repo.client.auth.currentUser?.id != owner) {
         throw StateError('Account changed');
       }
-      await repo.ensureProfile(_name);
-      await repo.setAvatar(photo, expectedOwner: owner);
-      await _load();
-      ProfilePreference.changes.value++;
-    } catch (_) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('プロフィール写真を保存できませんでした。もう一度お試しください。')),
-        );
-      }
+    }
+
+    final saver = ProfileEditSaveCoordinator(
+      checkAccount: checkAccount,
+      saveLocalName: ProfilePreference.setDisplayName,
+      saveRemote: repo == null
+          ? null
+          : (name, photoChanged, photo) async {
+              checkAccount();
+              if (photoChanged) {
+                await repo.setAvatar(
+                  photo,
+                  expectedOwner: owner,
+                  displayName: name,
+                );
+              } else {
+                await repo.ensureProfile(name);
+              }
+            },
+    );
+    try {
+      await showDialog<String>(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => ProfileEditDialog(
+          initialName: _name,
+          currentAvatar: FriendAvatar(
+            repository: repo,
+            path: _avatarPath,
+            radius: 40,
+          ),
+          hasPhoto: _avatarPath != null,
+          canEditPhoto: repo != null && _avatarAvailable,
+          saver: saver,
+          pickPhoto: () async {
+            checkAccount();
+            final picked = await image_picker.ImagePicker().pickImage(
+              source: image_picker.ImageSource.gallery,
+              maxWidth: 1024,
+              maxHeight: 1024,
+            );
+            if (picked == null) return null;
+            final photo = await prepareFriendAvatar(await picked.readAsBytes());
+            checkAccount();
+            return photo;
+          },
+        ),
+      );
+      if (mounted) await _load();
     } finally {
       if (mounted) setState(() => _editing = false);
     }
@@ -12030,11 +11988,9 @@ class _ProfileNameCardState extends State<_ProfileNameCard> {
           InkWell(
             key: const Key('editProfileAvatar'),
             borderRadius: BorderRadius.circular(28),
-            onTap: _loaded && !_editing && _avatarAvailable
-                ? _editAvatar
-                : null,
+            onTap: _loaded && !_editing ? _edit : null,
             child: Tooltip(
-              message: _avatarAvailable ? 'プロフィール写真を変更' : 'プロフィール',
+              message: 'プロフィールを編集',
               child: FriendAvatar(
                 repository: configuredFriends(),
                 path: _avatarPath,
@@ -12069,7 +12025,7 @@ class _ProfileNameCardState extends State<_ProfileNameCard> {
           ),
           IconButton(
             key: const Key('editProfileDisplayName'),
-            tooltip: '表示名を編集',
+            tooltip: 'プロフィールを編集',
             onPressed: _loaded && !_editing ? _edit : null,
             icon: const Icon(Icons.edit_outlined),
           ),

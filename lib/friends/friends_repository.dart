@@ -83,7 +83,12 @@ class FriendsRepository {
   Future<String> avatarUrl(String path) =>
       client.storage.from('friend-avatars').createSignedUrl(path, 60);
 
-  Future<void> setAvatar(Uint8List? photo, {String? expectedOwner}) async {
+  /// A supplied name is updated in the same profile row write as the photo.
+  Future<void> setAvatar(
+    Uint8List? photo, {
+    String? expectedOwner,
+    String? displayName,
+  }) async {
     final owner = expectedOwner ?? userId;
     if (client.auth.currentUser?.id != owner) {
       throw StateError('Account changed');
@@ -116,15 +121,37 @@ class FriendsRepository {
       }
       await client
           .from('friend_profiles')
-          .update({'avatar_path': path})
+          .update({
+            'avatar_path': path,
+            if (displayName != null)
+              'display_name': ProfilePreference.socialName(displayName),
+          })
           .eq('user_id', owner);
     } catch (_) {
-      if (path != null) {
-        try {
-          await client.storage.from('friend-avatars').remove([path]);
-        } catch (_) {}
+      // A lost response can follow a committed row update. Never delete the
+      // active photo; only clean up a candidate confirmed not to be referenced.
+      Map<String, dynamic>? current;
+      try {
+        if (client.auth.currentUser?.id == owner) current = await profile();
+        if (client.auth.currentUser?.id != owner) current = null;
+      } catch (_) {}
+      final committed =
+          current != null &&
+          current['avatar_path'] == path &&
+          (displayName == null ||
+              current['display_name'] ==
+                  ProfilePreference.socialName(displayName));
+      if (!committed) {
+        if (path != null &&
+            current != null &&
+            current['avatar_path'] != path &&
+            client.auth.currentUser?.id == owner) {
+          try {
+            await client.storage.from('friend-avatars').remove([path]);
+          } catch (_) {}
+        }
+        rethrow;
       }
-      rethrow;
     }
     if (previous != null && previous != path) {
       try {
