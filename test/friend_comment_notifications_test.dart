@@ -56,6 +56,7 @@ void main() {
         MaterialApp(
           home: Scaffold(
             body: HomeHeader(
+              showTrainerNotifications: true,
               repository: trainer,
               friendRepository: inbox,
               onStart: (_) async {},

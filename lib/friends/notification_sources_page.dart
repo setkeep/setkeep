@@ -1,3 +1,5 @@
+import '../config/trainer_release.dart';
+
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -13,11 +15,13 @@ class NotificationSourcesPage extends StatefulWidget {
     super.key,
     this.friends,
     this.trainer,
+    this.showTrainerNotifications = trainerPublicAccessEnabled,
     required this.onStart,
     this.onReadChanged,
   });
   final FriendCommentInboxRepository? friends;
   final TrainerInboxRepository? trainer;
+  final bool showTrainerNotifications;
   final Future<void> Function(WorkoutRecord) onStart;
   final VoidCallback? onReadChanged;
   @override
@@ -59,14 +63,17 @@ class _NotificationSourcesPageState extends State<NotificationSourcesPage>
           errors.add('friends');
         }
       }(),
-      () async {
-        try {
-          final count = await widget.trainer?.unreadCount() ?? 0;
-          if (mounted && current == generation) setState(() => trainer = count);
-        } catch (_) {
-          errors.add('trainer');
-        }
-      }(),
+      if (widget.showTrainerNotifications)
+        () async {
+          try {
+            final count = await widget.trainer?.unreadCount() ?? 0;
+            if (mounted && current == generation) {
+              setState(() => trainer = count);
+            }
+          } catch (_) {
+            errors.add('trainer');
+          }
+        }(),
     ]);
     if (mounted && current == generation) {
       setState(
@@ -121,22 +128,23 @@ class _NotificationSourcesPageState extends State<NotificationSourcesPage>
               ),
             ),
           ),
-          Card(
-            child: ListTile(
-              key: const Key('trainerNotificationSource'),
-              leading: const Icon(Icons.fitness_center),
-              title: Text(tr('トレーナーから', 'From your trainer')),
-              subtitle: Text(tr('メニューとコメント', 'Menus and comments')),
-              trailing: Text(tr('未読 $trainer', '$trainer unread')),
-              onTap: () => open(
-                TrainerInboxPage(
-                  repository: widget.trainer,
-                  onStart: widget.onStart,
-                  onReadChanged: widget.onReadChanged,
+          if (widget.showTrainerNotifications)
+            Card(
+              child: ListTile(
+                key: const Key('trainerNotificationSource'),
+                leading: const Icon(Icons.fitness_center),
+                title: Text(tr('トレーナーから', 'From your trainer')),
+                subtitle: Text(tr('メニューとコメント', 'Menus and comments')),
+                trailing: Text(tr('未読 $trainer', '$trainer unread')),
+                onTap: () => open(
+                  TrainerInboxPage(
+                    repository: widget.trainer,
+                    onStart: widget.onStart,
+                    onReadChanged: widget.onReadChanged,
+                  ),
                 ),
               ),
             ),
-          ),
         ],
       ),
     ),

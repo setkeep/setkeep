@@ -1685,13 +1685,15 @@ void main() {
     expect(trainingY, lessThan(otherY));
     expect(otherY, lessThan(backupY));
 
+    final trainerEntry = tester.widget<ListTile>(
+      find.byKey(const Key('trainerQrButton')),
+    );
+    expect(trainerEntry.enabled, isFalse);
+    expect(trainerEntry.onTap, isNull);
+    expect(find.text('準備中'), findsOneWidget);
     await tester.tap(find.byKey(const Key('trainerQrButton')));
-    // Linking now starts with explicit account/consent before opening the camera.
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
-    expect(find.byKey(const Key('trainerSharingPage')), findsOneWidget);
-    await tester.tap(find.byType(BackButton));
     await tester.pumpAndSettle();
+    expect(find.byKey(const Key('trainerSharingPage')), findsNothing);
 
     await tester.ensureVisible(
       find.byKey(const Key('backupDataManagementButton')),

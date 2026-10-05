@@ -1,3 +1,4 @@
+import 'config/trainer_release.dart';
 import 'design/workout_month_calendar.dart';
 import 'profile/profile_preference.dart';
 export 'profile/profile_preference.dart';
@@ -2474,11 +2475,13 @@ class HomeHeader extends StatefulWidget {
     required this.onStart,
     this.repository,
     this.friendRepository,
+    this.showTrainerNotifications = trainerPublicAccessEnabled,
   });
 
   final Future<void> Function(WorkoutRecord) onStart;
   final TrainerInboxRepository? repository;
   final FriendCommentInboxRepository? friendRepository;
+  final bool showTrainerNotifications;
 
   @override
   State<HomeHeader> createState() => _HomeHeaderState();
@@ -2508,8 +2511,8 @@ class _HomeHeaderState extends State<HomeHeader> with WidgetsBindingObserver {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     FriendsRefresh.listen(_refresh);
-    if (_repository != null) {
-      _authSubscription = _repository.authChanges.listen((_) {
+    if (_repository != null || _friends != null) {
+      _authSubscription = _repository?.authChanges.listen((_) {
         setState(() {
           _unreadCount = 0;
           _friendUnreadCount = 0;
@@ -2542,7 +2545,9 @@ class _HomeHeaderState extends State<HomeHeader> with WidgetsBindingObserver {
       return;
     }
     try {
-      final count = await _repository?.unreadCount() ?? 0;
+      final count = widget.showTrainerNotifications
+          ? await _repository?.unreadCount() ?? 0
+          : 0;
       if (mounted &&
           current == _generation &&
           (_repository?.userId ?? _friends?.userId) == uid) {
@@ -2568,6 +2573,7 @@ class _HomeHeaderState extends State<HomeHeader> with WidgetsBindingObserver {
       MaterialPageRoute(
         builder: (_) => NotificationSourcesPage(
           trainer: _repository,
+          showTrainerNotifications: widget.showTrainerNotifications,
           friends: _friends,
           onStart: widget.onStart,
           onReadChanged: () => unawaited(_refresh()),
@@ -2617,8 +2623,12 @@ class _HomeHeaderState extends State<HomeHeader> with WidgetsBindingObserver {
               IconButton(
                 key: const Key('trainerInboxBell'),
                 tooltip: Localizations.localeOf(context).languageCode == 'ja'
-                    ? 'フレンド・トレーナーからの通知'
-                    : 'Notifications from friends and your trainer',
+                    ? (widget.showTrainerNotifications
+                          ? 'フレンド・トレーナーからの通知'
+                          : 'フレンドからの通知')
+                    : (widget.showTrainerNotifications
+                          ? 'Notifications from friends and your trainer'
+                          : 'Notifications from friends'),
                 onPressed: _openInbox,
                 icon: const Icon(Icons.notifications_none_rounded),
               ),
@@ -12187,16 +12197,29 @@ class ProfilePage extends StatelessWidget {
               key: const Key('trainerQrButton'),
               leading: const Icon(Icons.qr_code_scanner_rounded),
               title: const Text('SETKEEP TRAINERと連携'),
-              subtitle: const Text('招待の承認・記録の共有・代理記録の自動同期'),
-              trailing: const Icon(Icons.chevron_right_rounded),
-              onTap: () => Navigator.of(context).push<void>(
-                MaterialPageRoute(
-                  builder: (_) => TrainerSharingPage(
-                    history: history.map((w) => w.toJson()).toList(),
-                    onLinked: onTrainerLinked,
-                  ),
-                ),
+              enabled: trainerPublicAccessEnabled,
+              subtitle: Text(
+                trainerPublicAccessEnabled
+                    ? (Localizations.localeOf(context).languageCode == 'en'
+                          ? 'Invitations, shared records and automatic sync'
+                          : '招待の承認・記録の共有・代理記録の自動同期')
+                    : (Localizations.localeOf(context).languageCode == 'en'
+                          ? 'Coming soon'
+                          : '準備中'),
               ),
+              trailing: trainerPublicAccessEnabled
+                  ? const Icon(Icons.chevron_right_rounded)
+                  : null,
+              onTap: trainerPublicAccessEnabled
+                  ? () => Navigator.of(context).push<void>(
+                      MaterialPageRoute(
+                        builder: (_) => TrainerSharingPage(
+                          history: history.map((w) => w.toJson()).toList(),
+                          onLinked: onTrainerLinked,
+                        ),
+                      ),
+                    )
+                  : null,
             ),
           ),
           _sectionTitle('その他設定'),

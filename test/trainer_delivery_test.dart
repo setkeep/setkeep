@@ -168,7 +168,11 @@ void main() {
     await t.pumpWidget(
       MaterialApp(
         home: Scaffold(
-          body: HomeHeader(repository: repo, onStart: (_) async {}),
+          body: HomeHeader(
+            showTrainerNotifications: true,
+            repository: repo,
+            onStart: (_) async {},
+          ),
         ),
       ),
     );
@@ -195,7 +199,11 @@ void main() {
       await t.pumpWidget(
         MaterialApp(
           home: Scaffold(
-            body: HomeHeader(repository: repo, onStart: (_) async {}),
+            body: HomeHeader(
+              showTrainerNotifications: true,
+              repository: repo,
+              onStart: (_) async {},
+            ),
           ),
         ),
       );
@@ -242,7 +250,11 @@ void main() {
       await t.pumpWidget(
         MaterialApp(
           home: Scaffold(
-            body: HomeHeader(repository: repo, onStart: (_) async {}),
+            body: HomeHeader(
+              showTrainerNotifications: true,
+              repository: repo,
+              onStart: (_) async {},
+            ),
           ),
         ),
       );
