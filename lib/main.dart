@@ -17,7 +17,6 @@ import 'trainer/trainer_inbox_repository.dart';
 import 'friends/friend_comment_inbox.dart';
 import 'friends/notification_sources_page.dart';
 import 'design/family_theme.dart';
-import 'admin/report_management_page.dart';
 import 'gym/place_equipment_pages.dart';
 import 'gym/custom_gym_preference.dart';
 export 'gym/custom_gym_preference.dart';
@@ -12161,7 +12160,6 @@ class ProfilePage extends StatelessWidget {
                     ),
                   ),
                 ),
-                const ReportAdminEntry(embedded: true),
               ],
             ),
           ),
