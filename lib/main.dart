@@ -5397,58 +5397,46 @@ class WorkoutDetailExerciseCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (sets.isEmpty) return const SizedBox.shrink();
-    final name = exerciseDisplayName(
-      sets.first.exerciseName,
-      exerciseId: sets.first.exerciseId,
-    );
-    return Card(
-      margin: const EdgeInsets.only(bottom: 14),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
-      child: Padding(
-        padding: const EdgeInsets.all(18),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              name,
-              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
-            ),
-            const SizedBox(height: 3),
-            Text(
-              '${sets.first.bodyPart}${sets.first.equipment.isEmpty ? '' : ' ・ ${sets.first.equipment}'}',
-              style: const TextStyle(fontSize: 12, color: Color(0xFF777F78)),
-            ),
-            const SizedBox(height: 16),
-            ...List.generate(
-              sets.length,
-              (index) => Padding(
-                padding: const EdgeInsets.symmetric(vertical: 6),
-                child: Row(
-                  children: [
-                    SizedBox(
-                      width: 42,
-                      child: Text(
-                        '${index + 1}',
-                        style: const TextStyle(fontWeight: FontWeight.w800),
-                      ),
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 14),
+      child: WorkoutExerciseCardShell(
+        children: [
+          WorkoutExerciseCardHeader(
+            name: sets.first.exerciseName,
+            exerciseId: sets.first.exerciseId,
+            bodyPart: sets.first.bodyPart,
+            equipment: sets.first.equipment,
+          ),
+          const SizedBox(height: 16),
+          ...List.generate(
+            sets.length,
+            (index) => Padding(
+              padding: const EdgeInsets.symmetric(vertical: 6),
+              child: Row(
+                children: [
+                  SizedBox(
+                    width: 42,
+                    child: Text(
+                      '${index + 1}',
+                      style: const TextStyle(fontWeight: FontWeight.w800),
                     ),
-                    Expanded(
-                      child: Text(
-                        sets[index].displaySummary,
-                        style: const TextStyle(fontWeight: FontWeight.w800),
-                      ),
+                  ),
+                  Expanded(
+                    child: Text(
+                      sets[index].displaySummary,
+                      style: const TextStyle(fontWeight: FontWeight.w800),
                     ),
-                    if (showCompletionChecks)
-                      const Icon(
-                        Icons.check_circle_rounded,
-                        color: AppColors.primaryGreenStrong,
-                      ),
-                  ],
-                ),
+                  ),
+                  if (showCompletionChecks)
+                    const Icon(
+                      Icons.check_circle_rounded,
+                      color: AppColors.primaryGreenStrong,
+                    ),
+                ],
               ),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

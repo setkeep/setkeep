@@ -169,7 +169,11 @@ void main() {
         scrollable: find.byType(Scrollable).first,
       );
       expect(find.text('ベンチプレス'), findsOneWidget);
-      await t.ensureVisible(find.text('Like 0'));
+      await t.scrollUntilVisible(
+        find.text('Like 0'),
+        80,
+        scrollable: find.byType(Scrollable).first,
+      );
       await t.pumpAndSettle();
       expect(find.text('Like 0'), findsOneWidget);
       await t.tap(find.text('Like 0'));
