@@ -64,6 +64,8 @@ flutter run --dart-define-from-file=supabase.json
 
 `supabase.example.json` を参考にローカル用の `supabase.json` を作成してください。`supabase.json` はGit管理対象外です。
 
+公開済みのフレンド招待ページを使うビルドでは、同じ設定ファイルに `"FRIEND_INVITE_BASE_URL": "https://boredota.com/invite"` を含めてください。Androidの `tool/build_android_beta.sh` とiOSの `flutter build ipa --release --dart-define-from-file=supabase.json` はこの設定を読み込みます。HTTPSリンクは招待ページを開き、ページの「アプリで開く」で既存の `setkeep://friend-invite/…` へ遷移します。Universal/App Linksの自動起動は別の関連付け・署名設定が必要です。招待はログインを跨いで保持し、申請成功時だけ消費します。
+
 ## 開発方針
 
 - 既存設計・UI・命名規則を尊重する

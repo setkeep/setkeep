@@ -171,9 +171,10 @@ void main() {
       expect(FriendInviteLink.parse(text), isNull);
     }
     expect(
-      FriendInviteLink.url(targetCode),
+      FriendInviteLink.url(targetCode, configuredBaseUrl: ''),
       'setkeep://friend-invite/$targetCode',
     );
+    expect(FriendInviteLink.parse(FriendInviteLink.url(targetCode)), targetCode);
   });
   test('valid invite survives login and app restart, invalid link leaves it intact', () async {
     await FriendInviteStore.capture('setkeep://friend-invite/$targetCode');

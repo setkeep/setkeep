@@ -127,9 +127,9 @@ void main() {
   });
 
   test(
-    'pending invite survives restart and unrelated login callback',
+    'configured invite survives restart and unrelated login callback',
     () async {
-      await FriendInviteStore.capture('setkeep://friend-invite/abcd2345');
+      await FriendInviteStore.capture(FriendInviteLink.url('abcd-2345'));
       await FriendInviteStore.capture('setkeep://login-callback/');
       expect(FriendInviteStore.pending.value, 'ABCD2345');
       await FriendInviteStore.reset();
