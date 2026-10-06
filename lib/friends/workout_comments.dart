@@ -45,7 +45,7 @@ class _HistoryWorkoutCommentsEntryState
   bool _opening = false;
 
   Future<void> _open() async {
-    if (_opening) return;
+    if (_opening || !widget.repository.commentsEnabled) return;
     setState(() => _opening = true);
     try {
       final viewer = widget.repository.userId;
@@ -94,17 +94,19 @@ class _HistoryWorkoutCommentsEntryState
   }
 
   @override
-  Widget build(BuildContext context) => OutlinedButton.icon(
-    key: const Key('historyWorkoutComments'),
-    onPressed: _opening ? null : _open,
-    icon: _opening
-        ? const SizedBox.square(
-            dimension: 18,
-            child: CircularProgressIndicator(strokeWidth: 2),
-          )
-        : const Icon(Icons.chat_bubble_outline_rounded),
-    label: Text(_label(context, 'この記録のコメント', 'Comments on this workout')),
-  );
+  Widget build(BuildContext context) => !widget.repository.commentsEnabled
+      ? const SizedBox.shrink()
+      : OutlinedButton.icon(
+          key: const Key('historyWorkoutComments'),
+          onPressed: _opening ? null : _open,
+          icon: _opening
+              ? const SizedBox.square(
+                  dimension: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.chat_bubble_outline_rounded),
+          label: Text(_label(context, 'この記録のコメント', 'Comments on this workout')),
+        );
 }
 
 /// One comment thread per shared workout, irrespective of the entry route.
@@ -203,7 +205,7 @@ class _WorkoutCommentsPageState extends State<WorkoutCommentsPage>
   }
 
   Future<bool> _canView() async {
-    if (!_sameAccount) return false;
+    if (!widget.repository.commentsEnabled || !_sameAccount) return false;
     final notificationId = widget.commentNotificationId;
     if (notificationId != null) {
       final inbox =
@@ -423,6 +425,9 @@ class _WorkoutCommentsPageState extends State<WorkoutCommentsPage>
   @override
   Widget build(BuildContext context) {
     final body = _draft.text.trim();
+    if (!widget.repository.commentsEnabled) {
+      return const FriendCommentsUnavailablePage();
+    }
     final length = _draft.text.runes.length;
     final enabled = _available && !_loading && !_sending && !_mutation;
     final sendingReady = widget.repository.supportsIdempotentComments;
@@ -790,4 +795,24 @@ class LikeAvatarStrip extends StatelessWidget {
       ),
     );
   }
+}
+
+/// A stale route cannot reveal a retained thread or offer comment actions.
+class FriendCommentsUnavailablePage extends StatelessWidget {
+  const FriendCommentsUnavailablePage({super.key});
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(title: const Text('SETKEEP')),
+    body: SafeArea(
+      child: Center(
+        child: Text(
+          _label(
+            context,
+            '現在この機能は利用できません',
+            'This feature is currently unavailable',
+          ),
+        ),
+      ),
+    ),
+  );
 }

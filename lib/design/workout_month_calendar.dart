@@ -92,13 +92,18 @@ class WorkoutMonthCalendar extends StatelessWidget {
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Text(
-                          '$day',
-                          style: TextStyle(
-                            fontWeight: hasWorkout
-                                ? FontWeight.w900
-                                : FontWeight.w500,
-                            color: selected ? Colors.white : null,
+                        Flexible(
+                          child: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Text(
+                              '$day',
+                              style: TextStyle(
+                                fontWeight: hasWorkout
+                                    ? FontWeight.w900
+                                    : FontWeight.w500,
+                                color: selected ? Colors.white : null,
+                              ),
+                            ),
                           ),
                         ),
                         if (hasWorkout)

@@ -6,6 +6,7 @@ import 'package:share_plus/share_plus.dart';
 
 import '../profile/profile_preference.dart';
 import 'friend_avatar.dart';
+import 'friend_avatar_preview.dart';
 import 'friend_invite.dart';
 import 'friend_comment_inbox.dart';
 import 'workout_comments.dart';
@@ -18,6 +19,7 @@ import '../config/supabase_config.dart';
 import '../main.dart'
     show
         WorkoutRecord,
+        WorkoutDetailExerciseCard,
         BodyMapPage,
         LegalConsentPreference,
         ExerciseRecordTypeUi;
@@ -233,9 +235,10 @@ class _FriendsSectionState extends State<FriendsSection>
                     if (metric.endsWith(' kg') ||
                         metric == socialWorkout(row).durationLabel)
                       Text(metric),
-                  Text(
-                    '${label(context, 'コメント', 'Comments')} ${(row['friend_comments'] as List?)?.length ?? 0}',
-                  ),
+                  if (repo?.commentsEnabled == true)
+                    Text(
+                      '${label(context, 'コメント', 'Comments')} ${(row['friend_comments'] as List?)?.length ?? 0}',
+                    ),
                 ],
               ),
             ),
@@ -864,7 +867,8 @@ class _FriendActivityPageState extends State<FriendActivityPage>
       }
       return;
     }
-    if (widget.commentNotificationId != null) {
+    if (widget.repository.commentsEnabled &&
+        widget.commentNotificationId != null) {
       final notifications =
           await (widget.notificationRepository ??
                   FriendCommentInboxRepository(widget.repository))
@@ -890,7 +894,7 @@ class _FriendActivityPageState extends State<FriendActivityPage>
               (_calendarInitialized ? null : widget.selectedId)),
     );
     final current = matches.isEmpty ? null : matches.first;
-    final messages = current == null
+    final messages = current == null || !widget.repository.commentsEnabled
         ? <Map<String, dynamic>>[]
         : await widget.repository.comments(current['id'] as String);
     var photos = <Map<String, dynamic>>[];
@@ -917,7 +921,8 @@ class _FriendActivityPageState extends State<FriendActivityPage>
           _calendarInitialized = true;
         }
       });
-      if (widget.commentNotificationId != null &&
+      if (widget.repository.commentsEnabled &&
+          widget.commentNotificationId != null &&
           current != null &&
           !_notificationOpened) {
         _notificationOpened = true;
@@ -958,6 +963,7 @@ class _FriendActivityPageState extends State<FriendActivityPage>
   }
 
   Future<void> openComments(Map<String, dynamic> row) async {
+    if (!widget.repository.commentsEnabled) return;
     await Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => WorkoutCommentsPage(
@@ -994,164 +1000,174 @@ class _FriendActivityPageState extends State<FriendActivityPage>
               : friendName(rows.first),
         ),
       ),
-      body: RefreshIndicator(
-        onRefresh: () => run(load),
-        child: ListView(
-          physics: const AlwaysScrollableScrollPhysics(),
-          padding: const EdgeInsets.all(20),
-          children: [
-            if (busy) const LinearProgressIndicator(),
-            if (!busy && rows.isEmpty)
-              Text(label(context, '公開トレーニングはありません', 'No visible workouts')),
-            if (rows.isNotEmpty)
-              FriendAvatar(
-                repository: widget.repository,
-                path:
-                    (rows.first['friend_profiles'] as Map?)?['avatar_path']
-                        as String?,
-                radius: 28,
-              ),
-            if (rows.isNotEmpty)
-              OutlinedButton.icon(
-                icon: const Icon(Icons.accessibility_new),
-                label: Text(label(context, '筋肉ヒートマップ', 'Muscle heatmap')),
-                onPressed: () => Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) => Scaffold(
-                      appBar: AppBar(title: Text(friendName(rows.first))),
-                      body: BodyMapPage(
-                        history: rows.map(socialWorkout).toList(),
+      body: SafeArea(
+        top: false,
+        child: RefreshIndicator(
+          onRefresh: () => run(load),
+          child: ListView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: const EdgeInsets.all(20),
+            children: [
+              if (busy) const LinearProgressIndicator(),
+              if (!busy && rows.isEmpty)
+                Text(label(context, '公開トレーニングはありません', 'No visible workouts')),
+              if (rows.isNotEmpty)
+                FriendProfilePhoto(
+                  onClosed: () => run(load),
+                  repository: widget.repository,
+                  owner: widget.owner,
+                  path:
+                      (rows.first['friend_profiles'] as Map?)?['avatar_path']
+                          as String?,
+                ),
+              if (rows.isNotEmpty)
+                OutlinedButton.icon(
+                  icon: const Icon(Icons.accessibility_new),
+                  label: Text(label(context, '筋肉ヒートマップ', 'Muscle heatmap')),
+                  onPressed: () => Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => Scaffold(
+                        appBar: AppBar(title: Text(friendName(rows.first))),
+                        body: BodyMapPage(
+                          history: rows.map(socialWorkout).toList(),
+                        ),
                       ),
                     ),
                   ),
                 ),
-              ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                IconButton(
-                  tooltip: label(context, '前の月', 'Previous month'),
-                  onPressed: busy ? null : () => _moveMonth(-1),
-                  icon: const Icon(Icons.chevron_left_rounded),
-                ),
-                Expanded(
-                  child: Text(
-                    label(
-                      context,
-                      '${_visibleMonth.year}年 ${_visibleMonth.month}月',
-                      '${_visibleMonth.year}/${_visibleMonth.month}',
-                    ),
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      fontSize: 21,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                ),
-                IconButton(
-                  tooltip: label(context, '次の月', 'Next month'),
-                  onPressed: busy ? null : () => _moveMonth(1),
-                  icon: const Icon(Icons.chevron_right_rounded),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            WorkoutMonthCalendar(
-              visibleMonth: _visibleMonth,
-              selectedDay: _selectedDay,
-              recordedDates: rows.map((r) => socialWorkout(r).date.toLocal()),
-              onSelectDay: (date, _) {
-                if (busy) return;
-                setState(() {
-                  _selectedDay = date;
-                  selected = null;
-                  comments = [];
-                });
-              },
-            ),
-            const SizedBox(height: 22),
-            Text(
-              _selectedDay == null
-                  ? label(context, '日付を選択してください', 'Select a day')
-                  : label(
-                      context,
-                      '${_selectedDay!.month}月${_selectedDay!.day}日の記録',
-                      'Workouts on ${_selectedDay!.month}/${_selectedDay!.day}',
-                    ),
-              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
-            ),
-            if (_selectedDay != null && shownRows.isEmpty)
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 24),
-                child: Center(
-                  child: Text(
-                    label(context, 'この日の記録はありません', 'No workouts on this day'),
-                  ),
-                ),
-              ),
-            for (final r in shownRows)
-              ListTile(
-                selected: r['id'] == row?['id'],
-                title: Text(dateLabel(socialWorkout(r))),
-                subtitle: Text(socialWorkout(r).summaryLabel),
-                onTap: busy
-                    ? null
-                    : () => run(() async {
-                        selected = r;
-                        await load();
-                      }),
-              ),
-            if (workout != null) ...[
-              const Divider(),
-              Text(
-                '${dateLabel(workout)} · ${workout.summaryLabel}',
-                style: const TextStyle(fontWeight: FontWeight.bold),
-              ),
-              for (final group in workout.exerciseGroups.values) ...[
-                Text(
-                  group.first.exerciseName,
-                  style: const TextStyle(fontWeight: FontWeight.bold),
-                ),
-                for (final set in group) Text(set.displaySummary),
-              ],
-              Wrap(
-                crossAxisAlignment: WrapCrossAlignment.center,
-                spacing: 8,
+              const SizedBox(height: 12),
+              Row(
                 children: [
-                  TextButton.icon(
-                    onPressed: busy
-                        ? null
-                        : () => run(() async {
-                            await widget.repository.like(
-                              row!['id'] as String,
-                              !liked,
-                            );
-                            await load();
-                          }),
-                    icon: Icon(
-                      liked ? Icons.favorite : Icons.favorite_border,
-                      color: liked ? const Color(0xFFC7F36B) : null,
-                    ),
-                    label: Text(
-                      '${label(context, 'いいね', 'Like')} ${likes.length}',
+                  IconButton(
+                    tooltip: label(context, '前の月', 'Previous month'),
+                    onPressed: busy ? null : () => _moveMonth(-1),
+                    icon: const Icon(Icons.chevron_left_rounded),
+                  ),
+                  Expanded(
+                    child: Text(
+                      label(
+                        context,
+                        '${_visibleMonth.year}年 ${_visibleMonth.month}月',
+                        '${_visibleMonth.year}/${_visibleMonth.month}',
+                      ),
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        fontSize: 21,
+                        fontWeight: FontWeight.w900,
+                      ),
                     ),
                   ),
-                  LikeAvatarStrip(
-                    repository: widget.repository,
-                    likes: likerPhotos,
+                  IconButton(
+                    tooltip: label(context, '次の月', 'Next month'),
+                    onPressed: busy ? null : () => _moveMonth(1),
+                    icon: const Icon(Icons.chevron_right_rounded),
                   ),
                 ],
               ),
-              OutlinedButton.icon(
-                key: const Key('openWorkoutComments'),
-                icon: const Icon(Icons.chat_bubble_outline),
-                label: Text(
-                  '${label(context, 'コメント', 'Comments')} ${comments.length}',
-                ),
-                onPressed: busy ? null : () => openComments(row!),
+              const SizedBox(height: 12),
+              WorkoutMonthCalendar(
+                visibleMonth: _visibleMonth,
+                selectedDay: _selectedDay,
+                recordedDates: rows.map((r) => socialWorkout(r).date.toLocal()),
+                onSelectDay: (date, _) {
+                  if (busy) return;
+                  setState(() {
+                    _selectedDay = date;
+                    selected = null;
+                    comments = [];
+                  });
+                },
               ),
+              const SizedBox(height: 22),
+              Text(
+                _selectedDay == null
+                    ? label(context, '日付を選択してください', 'Select a day')
+                    : label(
+                        context,
+                        '${_selectedDay!.month}月${_selectedDay!.day}日の記録',
+                        'Workouts on ${_selectedDay!.month}/${_selectedDay!.day}',
+                      ),
+                style: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              if (_selectedDay != null && shownRows.isEmpty)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 24),
+                  child: Center(
+                    child: Text(
+                      label(context, 'この日の記録はありません', 'No workouts on this day'),
+                    ),
+                  ),
+                ),
+              if (workout == null || shownRows.length > 1)
+                for (final r in shownRows)
+                  ListTile(
+                    selected: r['id'] == row?['id'],
+                    title: Text(
+                      '${socialWorkout(r).date.toLocal().hour.toString().padLeft(2, '0')}:${socialWorkout(r).date.toLocal().minute.toString().padLeft(2, '0')}',
+                    ),
+                    subtitle: Text(socialWorkout(r).summaryLabel),
+                    onTap: busy
+                        ? null
+                        : () => run(() async {
+                            selected = r;
+                            await load();
+                          }),
+                  ),
+              if (workout != null) ...[
+                const SizedBox(height: 10),
+                Text(
+                  workout.summaryLabel,
+                  style: const TextStyle(color: Color(0xFF6C746D)),
+                ),
+                const SizedBox(height: 22),
+                for (final group in workout.exerciseGroups.values)
+                  WorkoutDetailExerciseCard(
+                    sets: group,
+                    showCompletionChecks: false,
+                  ),
+                Wrap(
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  spacing: 8,
+                  children: [
+                    TextButton.icon(
+                      onPressed: busy
+                          ? null
+                          : () => run(() async {
+                              await widget.repository.like(
+                                row!['id'] as String,
+                                !liked,
+                              );
+                              await load();
+                            }),
+                      icon: Icon(
+                        liked ? Icons.favorite : Icons.favorite_border,
+                        color: liked ? const Color(0xFFC7F36B) : null,
+                      ),
+                      label: Text(
+                        '${label(context, 'いいね', 'Like')} ${likes.length}',
+                      ),
+                    ),
+                    LikeAvatarStrip(
+                      repository: widget.repository,
+                      likes: likerPhotos,
+                    ),
+                  ],
+                ),
+                if (widget.repository.commentsEnabled)
+                  OutlinedButton.icon(
+                    key: const Key('openWorkoutComments'),
+                    icon: const Icon(Icons.chat_bubble_outline),
+                    label: Text(
+                      '${label(context, 'コメント', 'Comments')} ${comments.length}',
+                    ),
+                    onPressed: busy ? null : () => openComments(row!),
+                  ),
+              ],
             ],
-          ],
+          ),
         ),
       ),
     );

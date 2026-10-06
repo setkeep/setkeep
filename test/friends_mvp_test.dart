@@ -17,6 +17,8 @@ class FakeFriends extends FriendsRepository {
       );
   @override
   String get userId => 'me';
+  @override
+  bool get commentsEnabled => true;
   bool private = true;
   bool fail = false;
   bool liked = false;
@@ -168,14 +170,22 @@ void main() {
       );
       expect(find.text('ベンチプレス'), findsOneWidget);
       await t.ensureVisible(find.text('Like 0'));
+      await t.pumpAndSettle();
       expect(find.text('Like 0'), findsOneWidget);
       await t.tap(find.text('Like 0'));
       await t.pumpAndSettle();
+      expect(repo.liked, true);
+      await t.scrollUntilVisible(
+        find.text('Like 1'),
+        80,
+        scrollable: find.byType(Scrollable).first,
+      );
       expect(find.text('Like 1'), findsOneWidget);
       await t.tap(find.text('Like 1'));
       await t.pumpAndSettle();
       expect(repo.liked, false);
       await t.ensureVisible(find.text('Comments 0'));
+      await t.pumpAndSettle();
       await t.tap(find.text('Comments 0'));
       await t.pumpAndSettle();
       await t.ensureVisible(find.byType(TextField));
@@ -251,6 +261,7 @@ void main() {
         'test',
         authOptions: const AuthClientOptions(autoRefreshToken: false),
       ),
+      commentsEnabled: true,
     );
     await expectLater(repo.comment('id', '   '), throwsArgumentError);
     await expectLater(

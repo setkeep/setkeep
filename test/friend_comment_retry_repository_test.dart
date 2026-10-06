@@ -52,7 +52,7 @@ void main() {
       await server.close(force: true);
     });
     await login(client, owner);
-    final repo = FriendsRepository(client);
+    final repo = FriendsRepository(client, commentsEnabled: true);
     await expectLater(
       repo.sendComment('session', ' 日本語\nmessage ', operationId: operationId),
       throwsA(isA<PostgrestException>()),
@@ -96,7 +96,7 @@ void main() {
         await server.close(force: true);
       });
       await login(client, owner);
-      final repo = FriendsRepository(client);
+      final repo = FriendsRepository(client, commentsEnabled: true);
       await expectLater(
         repo.sendComment('session', 'Hello', operationId: owner),
         throwsStateError,

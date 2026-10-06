@@ -197,7 +197,7 @@ void main() {
         await server.close(force: true);
       });
       await login(client, owner);
-      final repo = FriendsRepository(client);
+      final repo = FriendsRepository(client, commentsEnabled: true);
       expect(await repo.myInviteCode(), 'ABCD2345');
       expect(repo.supportsMutualFriendSharing, true);
       expect((await repo.invitePreview('ABCD2345'))['display_name'], 'Friend');

@@ -23,6 +23,8 @@ class CommentFriends extends FriendsRepository {
   bool get supportsIdempotentComments => sendingReady;
   @override
   String get userId => viewer;
+  @override
+  bool get commentsEnabled => true;
   bool accessible = true;
   bool failSend = false;
   bool loseReplyAfterCommit = false;

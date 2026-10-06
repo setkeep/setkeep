@@ -8,6 +8,7 @@ import '../main.dart' show WorkoutRecord;
 import '../trainer/trainer_inbox_page.dart';
 import '../trainer/trainer_inbox_repository.dart';
 import 'friend_comment_inbox.dart';
+import 'workout_comments.dart';
 import 'friends_ui.dart';
 
 class NotificationSourcesPage extends StatefulWidget {
@@ -31,6 +32,8 @@ class NotificationSourcesPage extends StatefulWidget {
 
 class _NotificationSourcesPageState extends State<NotificationSourcesPage>
     with WidgetsBindingObserver {
+  bool get _friendCommentsEnabled =>
+      widget.friends?.friends.commentsEnabled == true;
   int friends = 0, trainer = 0, generation = 0;
   String? error;
   StreamSubscription<void>? auth;
@@ -55,14 +58,17 @@ class _NotificationSourcesPageState extends State<NotificationSourcesPage>
     final current = ++generation;
     final errors = <String>[];
     await Future.wait([
-      () async {
-        try {
-          final count = await widget.friends?.unreadCount() ?? 0;
-          if (mounted && current == generation) setState(() => friends = count);
-        } catch (_) {
-          errors.add('friends');
-        }
-      }(),
+      if (_friendCommentsEnabled)
+        () async {
+          try {
+            final count = await widget.friends?.unreadCount() ?? 0;
+            if (mounted && current == generation) {
+              setState(() => friends = count);
+            }
+          } catch (_) {
+            errors.add('friends');
+          }
+        }(),
       if (widget.showTrainerNotifications)
         () async {
           try {
@@ -111,23 +117,24 @@ class _NotificationSourcesPageState extends State<NotificationSourcesPage>
         padding: const EdgeInsets.all(20),
         children: [
           if (error != null) Text(error!),
-          Card(
-            child: ListTile(
-              key: const Key('friendNotificationSource'),
-              leading: const Icon(Icons.people_outline),
-              title: Text(tr('フレンドから', 'From friends')),
-              subtitle: Text(
-                tr('あなたの共有トレーニングへのコメント', 'Comments on your shared workouts'),
-              ),
-              trailing: Text(tr('未読 $friends', '$friends unread')),
-              onTap: () => open(
-                FriendCommentInboxPage(
-                  repository: widget.friends,
-                  onReadChanged: widget.onReadChanged,
+          if (_friendCommentsEnabled)
+            Card(
+              child: ListTile(
+                key: const Key('friendNotificationSource'),
+                leading: const Icon(Icons.people_outline),
+                title: Text(tr('フレンドから', 'From friends')),
+                subtitle: Text(
+                  tr('あなたの共有トレーニングへのコメント', 'Comments on your shared workouts'),
+                ),
+                trailing: Text(tr('未読 $friends', '$friends unread')),
+                onTap: () => open(
+                  FriendCommentInboxPage(
+                    repository: widget.friends,
+                    onReadChanged: widget.onReadChanged,
+                  ),
                 ),
               ),
             ),
-          ),
           if (widget.showTrainerNotifications)
             Card(
               child: ListTile(
@@ -188,6 +195,16 @@ class _FriendCommentInboxPageState extends State<FriendCommentInboxPage>
 
   Future<void> refresh() async {
     final current = ++generation;
+    if (widget.repository?.friends.commentsEnabled != true) {
+      if (mounted) {
+        setState(() {
+          rows = [];
+          loading = false;
+          error = null;
+        });
+      }
+      return;
+    }
     final owner = widget.repository?.userId;
     try {
       final result =
@@ -217,6 +234,7 @@ class _FriendCommentInboxPageState extends State<FriendCommentInboxPage>
   }
 
   Future<void> open(Map<String, dynamic> row) async {
+    if (widget.repository?.friends.commentsEnabled != true) return;
     final repo = widget.repository!;
     final owner = repo.userId;
     if (owner == null) return;
@@ -280,38 +298,45 @@ class _FriendCommentInboxPageState extends State<FriendCommentInboxPage>
   }
 
   @override
-  Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: Text(label(context, 'フレンドから', 'From friends'))),
-    body: RefreshIndicator(
-      onRefresh: refresh,
-      child: ListView(
-        physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.all(20),
-        children: [
-          if (loading) const LinearProgressIndicator(),
-          if (error != null) Text(error!),
-          if (!loading && rows.isEmpty && error == null)
-            Text(
-              label(context, 'コメント通知はまだありません', 'No comment notifications yet'),
+  Widget build(BuildContext context) =>
+      widget.repository?.friends.commentsEnabled != true
+      ? const FriendCommentsUnavailablePage()
+      : Scaffold(
+          appBar: AppBar(title: Text(label(context, 'フレンドから', 'From friends'))),
+          body: RefreshIndicator(
+            onRefresh: refresh,
+            child: ListView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.all(20),
+              children: [
+                if (loading) const LinearProgressIndicator(),
+                if (error != null) Text(error!),
+                if (!loading && rows.isEmpty && error == null)
+                  Text(
+                    label(
+                      context,
+                      'コメント通知はまだありません',
+                      'No comment notifications yet',
+                    ),
+                  ),
+                for (final row in rows)
+                  Card(
+                    child: ListTile(
+                      key: ValueKey('friendCommentNotification_${row['id']}'),
+                      leading: Icon(
+                        row['read'] == true
+                            ? Icons.chat_bubble_outline
+                            : Icons.mark_chat_unread_outlined,
+                      ),
+                      title: Text(row['friend_name'] as String),
+                      subtitle: Text('${row['body']}\n${row['created_at']}'),
+                      isThreeLine: true,
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: () => open(row),
+                    ),
+                  ),
+              ],
             ),
-          for (final row in rows)
-            Card(
-              child: ListTile(
-                key: ValueKey('friendCommentNotification_${row['id']}'),
-                leading: Icon(
-                  row['read'] == true
-                      ? Icons.chat_bubble_outline
-                      : Icons.mark_chat_unread_outlined,
-                ),
-                title: Text(row['friend_name'] as String),
-                subtitle: Text('${row['body']}\n${row['created_at']}'),
-                isThreeLine: true,
-                trailing: const Icon(Icons.chevron_right),
-                onTap: () => open(row),
-              ),
-            ),
-        ],
-      ),
-    ),
-  );
+          ),
+        );
 }

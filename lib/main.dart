@@ -2496,9 +2496,15 @@ class HomeHeader extends StatefulWidget {
 
 class _HomeHeaderState extends State<HomeHeader> with WidgetsBindingObserver {
   FriendCommentInboxRepository? get _friends {
-    if (widget.friendRepository != null) return widget.friendRepository;
+    if (widget.friendRepository != null) {
+      return widget.friendRepository!.friends.commentsEnabled
+          ? widget.friendRepository
+          : null;
+    }
     final repo = configuredFriends();
-    return repo == null ? null : FriendCommentInboxRepository(repo);
+    return repo?.commentsEnabled == true
+        ? FriendCommentInboxRepository(repo!)
+        : null;
   }
 
   late final TrainerInboxRepository? _repository =
@@ -2617,60 +2623,61 @@ class _HomeHeaderState extends State<HomeHeader> with WidgetsBindingObserver {
             ),
           ),
         ),
-        Container(
-          width: 46,
-          height: 46,
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            shape: BoxShape.circle,
-          ),
-          child: Stack(
-            clipBehavior: Clip.none,
-            children: [
-              IconButton(
-                key: const Key('trainerInboxBell'),
-                tooltip: Localizations.localeOf(context).languageCode == 'ja'
-                    ? (widget.showTrainerNotifications
-                          ? 'フレンド・トレーナーからの通知'
-                          : 'フレンドからの通知')
-                    : (widget.showTrainerNotifications
-                          ? 'Notifications from friends and your trainer'
-                          : 'Notifications from friends'),
-                onPressed: _openInbox,
-                icon: const Icon(Icons.notifications_none_rounded),
-              ),
-              if (_unreadCount + _friendUnreadCount > 0)
-                Positioned(
-                  right: -3,
-                  top: -3,
-                  child: Container(
-                    key: const Key('trainerInboxUnreadBadge'),
-                    constraints: const BoxConstraints(
-                      minWidth: 20,
-                      minHeight: 20,
-                    ),
-                    padding: const EdgeInsets.symmetric(horizontal: 3),
-                    decoration: BoxDecoration(
-                      color: AppColors.primaryGreen,
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: Colors.white, width: 1.5),
-                    ),
-                    alignment: Alignment.center,
-                    child: Text(
-                      _unreadCount + _friendUnreadCount > 99
-                          ? '99+'
-                          : '${_unreadCount + _friendUnreadCount}',
-                      style: const TextStyle(
-                        color: AppColors.ink,
-                        fontSize: 10,
-                        fontWeight: FontWeight.w800,
+        if (widget.showTrainerNotifications || _friends != null)
+          Container(
+            width: 46,
+            height: 46,
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              shape: BoxShape.circle,
+            ),
+            child: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                IconButton(
+                  key: const Key('trainerInboxBell'),
+                  tooltip: Localizations.localeOf(context).languageCode == 'ja'
+                      ? (widget.showTrainerNotifications
+                            ? 'フレンド・トレーナーからの通知'
+                            : 'フレンドからの通知')
+                      : (widget.showTrainerNotifications
+                            ? 'Notifications from friends and your trainer'
+                            : 'Notifications from friends'),
+                  onPressed: _openInbox,
+                  icon: const Icon(Icons.notifications_none_rounded),
+                ),
+                if (_unreadCount + _friendUnreadCount > 0)
+                  Positioned(
+                    right: -3,
+                    top: -3,
+                    child: Container(
+                      key: const Key('trainerInboxUnreadBadge'),
+                      constraints: const BoxConstraints(
+                        minWidth: 20,
+                        minHeight: 20,
+                      ),
+                      padding: const EdgeInsets.symmetric(horizontal: 3),
+                      decoration: BoxDecoration(
+                        color: AppColors.primaryGreen,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: Colors.white, width: 1.5),
+                      ),
+                      alignment: Alignment.center,
+                      child: Text(
+                        _unreadCount + _friendUnreadCount > 99
+                            ? '99+'
+                            : '${_unreadCount + _friendUnreadCount}',
+                        style: const TextStyle(
+                          color: AppColors.ink,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w800,
+                        ),
                       ),
                     ),
                   ),
-                ),
-            ],
+              ],
+            ),
           ),
-        ),
       ],
     );
   }
@@ -5377,6 +5384,76 @@ class _WorkoutDetailSummary extends StatelessWidget {
   }
 }
 
+/// Shared presentation for saved sets. Friend records omit completion status.
+class WorkoutDetailExerciseCard extends StatelessWidget {
+  const WorkoutDetailExerciseCard({
+    super.key,
+    required this.sets,
+    this.showCompletionChecks = true,
+  });
+  final List<RecordedSet> sets;
+  final bool showCompletionChecks;
+
+  @override
+  Widget build(BuildContext context) {
+    if (sets.isEmpty) return const SizedBox.shrink();
+    final name = exerciseDisplayName(
+      sets.first.exerciseName,
+      exerciseId: sets.first.exerciseId,
+    );
+    return Card(
+      margin: const EdgeInsets.only(bottom: 14),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              name,
+              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
+            ),
+            const SizedBox(height: 3),
+            Text(
+              '${sets.first.bodyPart}${sets.first.equipment.isEmpty ? '' : ' ・ ${sets.first.equipment}'}',
+              style: const TextStyle(fontSize: 12, color: Color(0xFF777F78)),
+            ),
+            const SizedBox(height: 16),
+            ...List.generate(
+              sets.length,
+              (index) => Padding(
+                padding: const EdgeInsets.symmetric(vertical: 6),
+                child: Row(
+                  children: [
+                    SizedBox(
+                      width: 42,
+                      child: Text(
+                        '${index + 1}',
+                        style: const TextStyle(fontWeight: FontWeight.w800),
+                      ),
+                    ),
+                    Expanded(
+                      child: Text(
+                        sets[index].displaySummary,
+                        style: const TextStyle(fontWeight: FontWeight.w800),
+                      ),
+                    ),
+                    if (showCompletionChecks)
+                      const Icon(
+                        Icons.check_circle_rounded,
+                        color: AppColors.primaryGreenStrong,
+                      ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class WorkoutDetailPage extends StatelessWidget {
   const WorkoutDetailPage({
     super.key,
@@ -5465,7 +5542,8 @@ class WorkoutDetailPage extends StatelessWidget {
           ],
           const SizedBox(height: 10),
           _WorkoutDetailSummary(workout: workout),
-          if (configuredFriends() != null && workout.trainerWorkoutId == null)
+          if (configuredFriends()?.commentsEnabled == true &&
+              workout.trainerWorkoutId == null)
             HistoryWorkoutCommentsEntry(
               repository: configuredFriends()!,
               clientId: workout.date.toIso8601String(),
@@ -5506,73 +5584,9 @@ class WorkoutDetailPage extends StatelessWidget {
             ),
           ],
           const SizedBox(height: 22),
-          ...workout.exerciseGroups.values.map((sets) {
-            final name = exerciseDisplayName(
-              sets.first.exerciseName,
-              exerciseId: sets.first.exerciseId,
-            );
-            return Card(
-              margin: const EdgeInsets.only(bottom: 14),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(22),
-              ),
-              child: Padding(
-                padding: const EdgeInsets.all(18),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      name,
-                      style: const TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                    const SizedBox(height: 3),
-                    Text(
-                      '${sets.first.bodyPart}${sets.first.equipment.isEmpty ? '' : ' ・ ${sets.first.equipment}'}',
-                      style: const TextStyle(
-                        fontSize: 12,
-                        color: Color(0xFF777F78),
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    ...List.generate(
-                      sets.length,
-                      (index) => Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 6),
-                        child: Row(
-                          children: [
-                            SizedBox(
-                              width: 42,
-                              child: Text(
-                                '${index + 1}',
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w800,
-                                ),
-                              ),
-                            ),
-                            Expanded(
-                              child: Text(
-                                sets[index].displaySummary,
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w800,
-                                ),
-                              ),
-                            ),
-                            const Icon(
-                              Icons.check_circle_rounded,
-                              color: AppColors.primaryGreenStrong,
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            );
-          }),
+          ...workout.exerciseGroups.values.map(
+            (sets) => WorkoutDetailExerciseCard(sets: sets),
+          ),
           const SizedBox(height: 8),
           SizedBox(
             height: 54,

@@ -122,7 +122,7 @@ void main() {
             },
           }),
         );
-        final repository = FriendsRepository(client);
+        final repository = FriendsRepository(client, commentsEnabled: true);
         await repository.ensureProfile('Synthetic');
         expect(repository.supportsProfileInvites, upgraded);
         final feed = await repository.feed();
@@ -173,6 +173,15 @@ void main() {
             isFalse,
           );
         }
+        final closed = FriendsRepository(client);
+        await closed.feed(owner: 'friend-a');
+        expect(
+          requests.last.queryParameters['select'],
+          isNot(contains('friend_comments')),
+        );
+        final beforeClosedRead = requests.length;
+        expect(await closed.comments('session'), isEmpty);
+        expect(requests.length, beforeClosedRead);
         final inbox = FriendCommentInboxRepository(repository);
         expect(await inbox.comments(), isEmpty); // Private snapshots stay out.
         visibility = 'friends';

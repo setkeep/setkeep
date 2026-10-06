@@ -12,6 +12,7 @@ class FriendCommentInboxRepository {
   static Future<void> _writes = Future<void>.value();
 
   Future<List<Map<String, dynamic>>> comments() async {
+    if (!friends.commentsEnabled) return [];
     final owner = userId;
     if (owner == null) return [];
     final profile = await friends.profile();
@@ -58,6 +59,7 @@ class FriendCommentInboxRepository {
       (await comments()).where((row) => row['read'] != true).length;
 
   Future<bool> markRead(String id) {
+    if (!friends.commentsEnabled) return Future.value(false);
     final owner = userId;
     final result = _writes.then((_) async {
       if (owner == null || userId != owner) return false;

@@ -3,11 +3,16 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'dart:typed_data';
 
 import '../profile/profile_preference.dart';
+import '../config/friends_release.dart';
 import 'friend_snapshot_journal.dart';
 
 class FriendsRepository {
-  FriendsRepository(this.client, {FriendSnapshotJournal? journal})
-    : _journal = journal ?? FriendSnapshotJournal();
+  FriendsRepository(
+    this.client, {
+    FriendSnapshotJournal? journal,
+    this.commentsEnabled = friendCommentsPublicEnabled,
+  }) : _journal = journal ?? FriendSnapshotJournal();
+  final bool commentsEnabled;
   final SupabaseClient client;
   final FriendSnapshotJournal _journal;
   String get userId => client.auth.currentUser!.id;
@@ -316,7 +321,7 @@ class FriendsRepository {
   Future<List<Map<String, dynamic>>> feed({String? owner}) async {
     if (_profileInvitesAvailable == null) await profile();
     final fields =
-        '*, friend_profiles!inner(display_name${supportsProfileInvites ? ', avatar_path' : ''}), friend_likes(user_id), friend_comments(id)';
+        '*, friend_profiles!inner(display_name${supportsProfileInvites ? ', avatar_path' : ''}), friend_likes(user_id)${commentsEnabled ? ', friend_comments(id)' : ''}';
     if (owner == null && supportsProfileInvites) {
       return await client
           .rpc('latest_friend_workouts')
@@ -370,6 +375,7 @@ class FriendsRepository {
           .maybeSingle();
 
   Future<List<Map<String, dynamic>>> comments(String id) async {
+    if (!commentsEnabled) return [];
     if (_profileInvitesAvailable == null) await profile();
     if (supportsMutualFriendSharing) {
       final rows = List<Map<String, dynamic>>.from(
@@ -437,6 +443,7 @@ class FriendsRepository {
     String body, {
     required String operationId,
   }) async {
+    if (!commentsEnabled) throw StateError('Friend comments unavailable');
     final owner = userId;
     final text = body.trim();
     if (text.isEmpty || text.runes.length > 140) {
@@ -464,6 +471,7 @@ class FriendsRepository {
   }
 
   Future<void> comment(String id, String body) async {
+    if (!commentsEnabled) throw StateError('Friend comments unavailable');
     final text = body.trim();
     if (text.isEmpty || text.runes.length > 140) {
       throw ArgumentError('1–140 characters required');
@@ -476,6 +484,7 @@ class FriendsRepository {
   }
 
   Future<void> deleteComment(String id) async {
+    if (!commentsEnabled) throw StateError('Friend comments unavailable');
     await client
         .from('friend_comments')
         .delete()

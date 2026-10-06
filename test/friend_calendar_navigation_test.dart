@@ -50,11 +50,12 @@ void main() {
       expect(find.text('Muscle heatmap'), findsOneWidget);
       expect(find.byKey(const Key('monthlyCalendar')), findsOneWidget);
       await t.scrollUntilVisible(
-        find.text('2026/10/3').first,
+        find.text('12:00').first,
         150,
         scrollable: find.byType(Scrollable).first,
       );
-      expect(find.text('2026/10/3'), findsNWidgets(2));
+      expect(find.text('12:00'), findsOneWidget);
+      expect(find.text('18:00'), findsOneWidget);
       await t.ensureVisible(find.byKey(const Key('calendarDay4')));
       await t.tap(find.byKey(const Key('calendarDay4')));
       await t.pumpAndSettle();
@@ -63,7 +64,7 @@ void main() {
         150,
         scrollable: find.byType(Scrollable).first,
       );
-      expect(find.text('2026/10/3'), findsNothing);
+      expect(find.text('12:00'), findsNothing);
       await t.ensureVisible(find.byTooltip('Previous month'));
       await t.tap(find.byTooltip('Previous month'));
       await t.pumpAndSettle();
@@ -72,11 +73,11 @@ void main() {
       await t.tap(find.byKey(const Key('calendarDay26')));
       await t.pumpAndSettle();
       await t.scrollUntilVisible(
-        find.text('2026/9/26'),
+        find.text('12:00'),
         150,
         scrollable: find.byType(Scrollable).first,
       );
-      await t.tap(find.text('2026/9/26'));
+      await t.tap(find.text('12:00'));
       await t.pumpAndSettle();
       await t.scrollUntilVisible(
         find.text('Like 0'),
