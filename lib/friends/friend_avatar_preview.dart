@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
@@ -9,7 +10,7 @@ String _label(BuildContext context, String ja, String en) =>
     Localizations.localeOf(context).languageCode == 'en' ? en : ja;
 
 /// The friend's calendar photo has a viewing action, separate from editing.
-class FriendProfilePhoto extends StatelessWidget {
+class FriendProfilePhoto extends StatefulWidget {
   const FriendProfilePhoto({
     super.key,
     required this.repository,
@@ -23,26 +24,49 @@ class FriendProfilePhoto extends StatelessWidget {
   final Future<void> Function()? onClosed;
 
   @override
+  State<FriendProfilePhoto> createState() => _FriendProfilePhotoState();
+}
+
+class _FriendProfilePhotoState extends State<FriendProfilePhoto> {
+  bool _previewOpen = false;
+
+  Future<void> _open() async {
+    if (_previewOpen) return;
+    final path = widget.path;
+    if (path == null || path.isEmpty) return;
+    _previewOpen = true;
+    try {
+      await showDialog<void>(
+        context: context,
+        builder: (_) => FriendAvatarPreview(
+          repository: widget.repository,
+          owner: widget.owner,
+          path: path,
+        ),
+      );
+      if (mounted) await widget.onClosed?.call();
+    } finally {
+      _previewOpen = false;
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final avatar = FriendAvatar(repository: repository, path: path, radius: 28);
-    if (path == null || path!.isEmpty) return Center(child: avatar);
+    final avatar = FriendAvatar(
+      repository: widget.repository,
+      path: widget.path,
+      radius: 28,
+    );
+    if (widget.path == null || widget.path!.isEmpty) {
+      return Center(child: avatar);
+    }
     return Center(
       child: Tooltip(
         message: _label(context, 'プロフィール写真を見る', 'View profile photo'),
         child: InkWell(
           key: const Key('viewFriendProfilePhoto'),
           customBorder: const CircleBorder(),
-          onTap: () async {
-            await showDialog<void>(
-              context: context,
-              builder: (_) => FriendAvatarPreview(
-                repository: repository,
-                owner: owner,
-                path: path!,
-              ),
-            );
-            if (context.mounted) await onClosed?.call();
-          },
+          onTap: _open,
           child: avatar,
         ),
       ),
@@ -75,6 +99,7 @@ class _FriendAvatarPreviewState extends State<FriendAvatarPreview>
   bool _loading = true;
   bool _active = true;
   int _generation = 0;
+  bool _closing = false;
 
   bool get _sameAccount {
     try {
@@ -173,50 +198,61 @@ class _FriendAvatarPreviewState extends State<FriendAvatarPreview>
     ),
   );
 
+  void _close() {
+    if (_closing || !mounted || ModalRoute.of(context)?.isCurrent != true) {
+      return;
+    }
+    _closing = true;
+    Navigator.of(context).pop();
+  }
+
   @override
-  Widget build(BuildContext context) => Dialog(
-    key: const Key('friendProfilePhotoPreview'),
-    insetPadding: const EdgeInsets.all(20),
-    child: SizedBox(
-      width: 560,
-      height: MediaQuery.sizeOf(context).height * .65,
-      child: Column(
-        children: [
-          Align(
-            alignment: Alignment.centerRight,
-            child: IconButton(
-              key: const Key('closeFriendProfilePhoto'),
-              tooltip: _label(context, '閉じる', 'Close'),
-              icon: const Icon(Icons.close_rounded),
-              onPressed: () => Navigator.pop(context),
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) {
+      final diameter = math.min(
+        560.0,
+        math.max(
+          0.0,
+          math.min(constraints.maxWidth, constraints.maxHeight) - 48,
+        ),
+      );
+      return Center(
+        child: SizedBox.square(
+          key: const Key('friendProfilePhotoPreview'),
+          dimension: diameter,
+          child: Semantics(
+            button: true,
+            label: _label(context, '再度タップして閉じる', 'Tap again to close'),
+            child: GestureDetector(
+              key: const Key('dismissFriendProfilePhoto'),
+              behavior: HitTestBehavior.opaque,
+              onTap: _close,
+              child: ClipOval(
+                key: const Key('friendProfilePhotoCircle'),
+                child: _loading
+                    ? const Center(child: CircularProgressIndicator())
+                    : _url == null
+                    ? _unavailable(context)
+                    : Image.network(
+                        _url!,
+                        key: const Key('friendProfilePhotoImage'),
+                        fit: BoxFit.cover,
+                        semanticLabel: _label(
+                          context,
+                          'プロフィール写真',
+                          'Profile photo',
+                        ),
+                        loadingBuilder: (context, child, progress) =>
+                            progress == null
+                            ? child
+                            : const Center(child: CircularProgressIndicator()),
+                        errorBuilder: (context, _, _) => _unavailable(context),
+                      ),
+              ),
             ),
           ),
-          Expanded(
-            child: _loading
-                ? const Center(child: CircularProgressIndicator())
-                : _url == null
-                ? _unavailable(context)
-                : Padding(
-                    padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-                    child: Image.network(
-                      _url!,
-                      key: const Key('friendProfilePhotoImage'),
-                      fit: BoxFit.contain,
-                      semanticLabel: _label(
-                        context,
-                        'プロフィール写真',
-                        'Profile photo',
-                      ),
-                      loadingBuilder: (context, child, progress) =>
-                          progress == null
-                          ? child
-                          : const Center(child: CircularProgressIndicator()),
-                      errorBuilder: (context, _, _) => _unavailable(context),
-                    ),
-                  ),
-          ),
-        ],
-      ),
-    ),
+        ),
+      );
+    },
   );
 }

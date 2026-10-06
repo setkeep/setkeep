@@ -423,7 +423,7 @@ void main() {
   );
 
   testWidgets(
-    'photo preview contains full image, closes, and clears on revocation/resume',
+    'photo preview stays circular, tap closes, and clears on revocation/resume',
     (t) async {
       debugNetworkImageHttpClientProvider = () => PhotoClient();
       addTearDown(() => debugNetworkImageHttpClientProvider = null);
@@ -437,10 +437,25 @@ void main() {
       );
       expect(
         t.widget<Image>(find.byKey(const Key('friendProfilePhotoImage'))).fit,
-        BoxFit.contain,
+        BoxFit.cover,
       );
+      expect(
+        find.descendant(
+          of: find.byKey(const Key('friendProfilePhotoPreview')),
+          matching: find.byType(ClipOval),
+        ),
+        findsOneWidget,
+      );
+      expect(find.byType(Dialog), findsNothing);
+      expect(find.byKey(const Key('closeFriendProfilePhoto')), findsNothing);
+      expect(find.byIcon(Icons.close_rounded), findsNothing);
+      final previewSize = t.getSize(
+        find.byKey(const Key('friendProfilePhotoPreview')),
+      );
+      expect(previewSize.width, previewSize.height);
+      expect(previewSize.width, 342);
       expect(t.takeException(), isNull);
-      await t.tap(find.byKey(const Key('closeFriendProfilePhoto')));
+      await t.tap(find.byKey(const Key('dismissFriendProfilePhoto')));
       await settlePhotos(t);
       expect(find.byKey(const Key('friendProfilePhotoPreview')), findsNothing);
       await t.tap(find.byKey(const Key('viewFriendProfilePhoto')));
@@ -471,7 +486,7 @@ void main() {
       await t.pump(const Duration(seconds: 30));
       await settlePhotos(t);
       expect(find.byKey(const Key('friendProfilePhotoImage')), findsNothing);
-      await t.tap(find.byKey(const Key('closeFriendProfilePhoto')));
+      await t.tap(find.byKey(const Key('dismissFriendProfilePhoto')));
       await t.pumpAndSettle();
       expect(find.byKey(const Key('viewFriendProfilePhoto')), findsNothing);
       expect(find.byType(WorkoutDetailExerciseCard), findsNothing);
