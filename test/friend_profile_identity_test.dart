@@ -146,6 +146,7 @@ void main() {
             'visibility': 'private',
             'avatar_path': null,
             'sharing_consent_version': 0,
+            'friend_owned_sync_version': 1,
           };
         } else {
           final params = request.method == 'POST'
@@ -160,8 +161,11 @@ void main() {
               result = {'ok': true, 'display_name': 'Friend', 'status': null};
             case 'request_friend_v2':
               result = {'ok': false, 'error': 'invite_unavailable'};
-            case 'acknowledge_mutual_friend_sharing':
-              expect(params, {'consent_version': 'privacy-1.2'});
+            case 'acknowledge_owned_friend_sharing':
+              expect(params, {
+                'expected_owner': owner,
+                'consent_version': 'privacy-1.2',
+              });
               result = null;
             case 'friend_comment_thread':
               expect(params, {'target_workout_id': 'session'});

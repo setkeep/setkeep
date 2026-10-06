@@ -1,10 +1,12 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:flutter/foundation.dart' show visibleForTesting;
 
 import 'dart:typed_data';
 
 import '../profile/profile_preference.dart';
 import '../config/friends_release.dart';
 import 'friend_snapshot_journal.dart';
+import 'friend_workout_owner.dart';
 
 class FriendsRepository {
   FriendsRepository(
@@ -19,6 +21,8 @@ class FriendsRepository {
   bool? _profileInvitesAvailable;
   bool _mutualSharingAvailable = false;
   bool _idempotentCommentsAvailable = false;
+  bool _ownedSharingAvailable = false;
+  bool get supportsOwnedSharing => _ownedSharingAvailable;
   bool get supportsIdempotentComments => _idempotentCommentsAvailable;
   bool get supportsMutualFriendSharing => _mutualSharingAvailable;
   bool get supportsProfileInvites => _profileInvitesAvailable ?? false;
@@ -35,6 +39,7 @@ class FriendsRepository {
     _mutualSharingAvailable =
         result?.containsKey('sharing_consent_version') ?? false;
     _idempotentCommentsAvailable = result?['comment_idempotency_version'] == 1;
+    _ownedSharingAvailable = result?['friend_owned_sync_version'] == 1;
     return result;
   }
 
@@ -111,9 +116,12 @@ class FriendsRepository {
     if (!supportsMutualFriendSharing) {
       throw StateError('Friend sharing update unavailable');
     }
+    if (!supportsOwnedSharing) {
+      throw StateError('Safe friend sharing update unavailable');
+    }
     await client.rpc(
-      'acknowledge_mutual_friend_sharing',
-      params: {'consent_version': 'privacy-1.2'},
+      'acknowledge_owned_friend_sharing',
+      params: {'expected_owner': owner, 'consent_version': 'privacy-1.2'},
     );
     _requireOwner(owner);
   }
@@ -224,6 +232,15 @@ class FriendsRepository {
 
   static Future<void> _publication = Future<void>.value();
   static bool _retryRunning = false;
+
+  /// Widget tests each have a distinct virtual clock. Call only after the
+  /// previous test's client and requests have been disposed.
+  @visibleForTesting
+  static void resetPublicationQueueForTesting() {
+    _publication = Future<void>.value();
+    _retryRunning = false;
+  }
+
   Future<void> publish(List<Map<String, dynamic>> records) {
     final owner = userId;
     return _publish(owner, records);
@@ -236,8 +253,13 @@ class FriendsRepository {
     if (owner == null || _retryRunning) return;
     _retryRunning = true;
     try {
-      if ((await _journal.batch(owner)).pending) {
-        await _publish(owner, const [], deletionsOnly: true);
+      final batch = await _journal.batch(owner);
+      if (batch.pending) {
+        await _publish(
+          owner,
+          const [],
+          deletionsOnly: batch.publications.isEmpty,
+        );
       }
     } finally {
       _retryRunning = false;
@@ -259,8 +281,7 @@ class FriendsRepository {
           (deletionsOnly ? <Map<String, dynamic>>[] : batch.history ?? records)
               .where(
                 (r) =>
-                    (r['trainerOwnerUserId'] == null ||
-                        r['trainerOwnerUserId'] == owner) &&
+                    friendWorkoutOwner(r) == owner &&
                     !batch.deletions.containsKey(r['date']),
               )
               .map(
@@ -268,21 +289,43 @@ class FriendsRepository {
                   'date': r['date'],
                   'durationSeconds': r['durationSeconds'],
                   'sets': r['sets'],
+                  'friendOwnerUserId': owner,
                 },
               )
               .toList();
-      await client.rpc(
-        'sync_friend_workouts',
+      if (payload.isEmpty && batch.deletions.isEmpty) return;
+      final ownProfile = await profile();
+      if (client.auth.currentUser?.id != owner) return;
+      if (!supportsOwnedSharing) {
+        // Never fall back to the legacy full-snapshot RPC: it can remove
+        // existing shared records that this device does not contain.
+        throw StateError('Safe friend sharing update unavailable');
+      }
+      final visiblePayload =
+          ownProfile?['visibility'] == 'friends' &&
+              ownProfile?['sharing_consent_version'] == 1
+          ? payload
+          : <Map<String, dynamic>>[];
+      if (visiblePayload.isEmpty && batch.deletions.isEmpty) return;
+      final result = await client.rpc(
+        'sync_owned_friend_workouts',
         params: {
           'expected_owner': owner,
-          'records': payload,
+          'records': visiblePayload,
           'deleted_client_ids': batch.deletions.keys.toList(),
           'device_id': batch.deviceId,
           'revision': batch.revision,
-          'publish_snapshot': !deletionsOnly,
         },
       );
-      await _journal.acknowledge(owner, batch.deletions);
+      if (result is Map && result['accepted'] == true) {
+        await _journal.acknowledge(
+          owner,
+          batch.deletions,
+          publications: result['published'] == true
+              ? batch.publications
+              : const {},
+        );
+      }
     });
     _publication = next.catchError((Object _) {});
     return next;

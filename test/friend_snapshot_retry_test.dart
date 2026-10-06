@@ -7,10 +7,13 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:setkeep/friends/friends_repository.dart';
 import 'package:setkeep/friends/friend_snapshot_journal.dart';
 
-import 'friend_snapshot_journal_test.dart' show MemorySnapshotStore, record;
+import 'friend_snapshot_journal_test.dart' show MemorySnapshotStore;
+import 'friend_snapshot_journal_test.dart' as fixtures show record;
 
 const ownerA = '71000000-0000-0000-0000-000000000001';
 const ownerB = '71000000-0000-0000-0000-000000000002';
+Map<String, dynamic> record(String date, {String? owner = ownerA}) =>
+    fixtures.record(date, owner: owner);
 Future<void> login(SupabaseClient client, String owner) async {
   final expiry = DateTime.now().millisecondsSinceEpoch ~/ 1000 + 3600;
   final token =
@@ -58,12 +61,17 @@ void main() {
   late Map<String, String> visibility;
   var fail = false, commitBeforeFailure = false, missingRpc = false;
   Completer<void>? entered, release;
+  Completer<void>? profileEntered, profileRelease;
+  var ownedCapability = true;
   setUp(() async {
     fail = false;
     commitBeforeFailure = false;
     missingRpc = false;
     entered = null;
     release = null;
+    profileEntered = null;
+    profileRelease = null;
+    ownedCapability = true;
     calls = [];
     snapshots = {
       ownerA: {'deleted': record('deleted'), 'kept': record('kept')},
@@ -84,7 +92,26 @@ void main() {
         await request.response.close();
         return;
       }
-      expect(request.uri.path, '/rest/v1/rpc/sync_friend_workouts');
+      if (request.uri.path.endsWith('/friend_profiles')) {
+        final owner = request.uri.queryParameters['user_id']!.substring(3);
+        if (profileEntered != null && !profileEntered!.isCompleted) {
+          profileEntered!.complete();
+        }
+        if (profileRelease != null) await profileRelease!.future;
+        request.response.write(
+          jsonEncode([
+            {
+              'user_id': owner,
+              'visibility': visibility[owner],
+              'sharing_consent_version': 1,
+              if (ownedCapability) 'friend_owned_sync_version': 1,
+            },
+          ]),
+        );
+        await request.response.close();
+        return;
+      }
+      expect(request.uri.path, '/rest/v1/rpc/sync_owned_friend_workouts');
       final params = Map<String, dynamic>.from(
         jsonDecode(await utf8.decoder.bind(request).join()) as Map,
       );
@@ -103,9 +130,7 @@ void main() {
         for (final date in params['deleted_client_ids'] as List) {
           own.remove(date);
         }
-        if (params['publish_snapshot'] == true &&
-            visibility[expected] == 'friends') {
-          own.clear();
+        if (visibility[expected] == 'friends') {
           for (final row in params['records'] as List) {
             own[row['date'] as String] = Map<String, dynamic>.from(row as Map);
           }
@@ -120,7 +145,14 @@ void main() {
           }),
         );
       } else {
-        request.response.write('null');
+        request.response.write(
+          jsonEncode({
+            'accepted': true,
+            'published':
+                visibility[expected] == 'friends' &&
+                (params['records'] as List).isNotEmpty,
+          }),
+        );
       }
       await request.response.close();
     });
@@ -144,7 +176,7 @@ void main() {
     expect(snapshots[ownerA]!.keys, ['kept']);
     expect(snapshots[ownerB]!.keys, ['deleted']);
     expect(visibility[ownerA], 'private');
-    expect((calls.single['records'] as List).map((r) => r['date']), ['kept']);
+    expect(calls.single['records'], isEmpty);
     expect((await journal.batch(ownerA)).pending, false);
   });
   test('offline then restart retries deletion only, with no upload or implicit prune', () async {
@@ -162,7 +194,7 @@ void main() {
       journal: FriendSnapshotJournal(store: store),
     );
     await restarted.retryDeletions();
-    expect(calls.last['publish_snapshot'], false);
+    expect(calls.last.containsKey('publish_snapshot'), false);
     expect(calls.last['records'], isEmpty);
     expect(snapshots[ownerA]!.keys, ['kept']);
     expect((await journal.batch(ownerA)).pending, false);
@@ -274,7 +306,7 @@ void main() {
     await journal.saveHistory([record('kept')], expectedOwner: ownerA);
     store.values.remove(FriendSnapshotJournal.historyKey);
     await repo.retryDeletions();
-    expect(calls.single['publish_snapshot'], false);
+    expect(calls.single.containsKey('publish_snapshot'), false);
     expect(calls.single['records'], isEmpty);
     expect(snapshots[ownerA]!.keys, ['kept']);
   });
@@ -302,9 +334,112 @@ void main() {
     expect((await journal.batch(ownerA)).pending, false);
   });
   test(
+    'missing safe capability keeps queue and never calls a write or legacy RPC',
+    () async {
+      ownedCapability = false;
+      visibility[ownerA] = 'friends';
+      await journal.saveHistory(
+        [record('deleted'), record('kept'), record('new')],
+        expectedOwner: ownerA,
+        queuePublication: true,
+      );
+      await expectLater(repo.retryDeletions(), throwsStateError);
+      await expectLater(repo.acknowledgeMutualSharing(), throwsStateError);
+      expect(calls, isEmpty);
+      expect((await journal.batch(ownerA)).pending, true);
+    },
+  );
+  test(
+    'account change while profile read is pending prevents publication',
+    () async {
+      visibility[ownerA] = 'friends';
+      await journal.saveHistory(
+        [record('deleted'), record('kept'), record('new')],
+        expectedOwner: ownerA,
+        queuePublication: true,
+      );
+      profileEntered = Completer<void>();
+      profileRelease = Completer<void>();
+      final publishing = repo.retryDeletions();
+      await profileEntered!.future;
+      await login(client, ownerB);
+      profileRelease!.complete();
+      await publishing;
+      expect(calls, isEmpty);
+      expect((await journal.batch(ownerA)).pending, true);
+      expect((await journal.batch(ownerB)).pending, false);
+    },
+  );
+  test('offline owned save retries only for its account and preserves server-only history', () async {
+    visibility[ownerA] = 'friends';
+    await journal.saveHistory(
+      [
+        record('deleted'),
+        record('kept'),
+        record('new'),
+        record('legacy', owner: null),
+      ],
+      expectedOwner: ownerA,
+      queuePublication: true,
+    );
+    fail = true;
+    await expectLater(
+      repo.retryDeletions(),
+      throwsA(isA<PostgrestException>()),
+    );
+    expect((await journal.batch(ownerA)).publications.keys, ['new']);
+    await login(client, ownerB);
+    final count = calls.length;
+    await repo.retryDeletions();
+    expect(calls.length, count);
+    await login(client, ownerA);
+    fail = false;
+    snapshots[ownerA]!['server-only'] = record('server-only');
+    repo = FriendsRepository(
+      client,
+      journal: FriendSnapshotJournal(store: store),
+    );
+    await repo.retryDeletions();
+    expect(
+      snapshots[ownerA]!.keys,
+      unorderedEquals(['deleted', 'kept', 'new', 'server-only']),
+    );
+    expect((await journal.batch(ownerA)).pending, false);
+  });
+  test('private owned save remains queued without enabling visibility or sending contents', () async {
+    await journal.saveHistory(
+      [record('deleted'), record('kept'), record('new')],
+      expectedOwner: ownerA,
+      queuePublication: true,
+    );
+    await repo.retryDeletions();
+    expect(calls, isEmpty);
+    expect(visibility[ownerA], 'private');
+    expect((await journal.batch(ownerA)).publications.keys, ['new']);
+    visibility[ownerA] = 'friends';
+    await repo.retryDeletions();
+    expect(
+      snapshots[ownerA]!.keys,
+      unorderedEquals(['deleted', 'kept', 'new']),
+    );
+    expect((await journal.batch(ownerA)).pending, false);
+  });
+  test('unowned and other-account history produces no publication on explicit retry', () async {
+    store.values[FriendSnapshotJournal.historyKey] = jsonEncode([
+      record('legacy', owner: null),
+      record('other', owner: ownerB),
+    ]);
+    visibility[ownerA] = 'friends';
+    await repo.publish([]);
+    await repo.retryDeletions();
+    expect(calls, isEmpty);
+    expect(snapshots[ownerA]!.keys, unorderedEquals(['deleted', 'kept']));
+  });
+  test(
     'publication keeps social allowlist and excludes other trainer ownership',
     () async {
       store.values.remove(FriendSnapshotJournal.historyKey);
+      visibility[ownerA] = 'friends';
       await repo.publish([
         {
           ...record('own'),
@@ -318,7 +453,12 @@ void main() {
       expect(payload.length, 1);
       expect(
         (payload.single as Map).keys,
-        unorderedEquals(['date', 'durationSeconds', 'sets']),
+        unorderedEquals([
+          'date',
+          'durationSeconds',
+          'sets',
+          'friendOwnerUserId',
+        ]),
       );
     },
   );

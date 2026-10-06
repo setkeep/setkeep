@@ -16,11 +16,11 @@ class MemorySnapshotStore implements FriendSnapshotStore {
   }
 }
 
-Map<String, dynamic> record(String date, {String? owner}) => {
+Map<String, dynamic> record(String date, {String? owner = 'A'}) => {
   'date': date,
   'durationSeconds': 10,
   'sets': [],
-  'trainerOwnerUserId': owner,
+  'friendOwnerUserId': ?owner,
 };
 void main() {
   late MemorySnapshotStore store;
@@ -32,6 +32,74 @@ void main() {
       record('deleted'),
       record('kept'),
     ]);
+  });
+  test(
+    'legacy history and unverified old journal never guess ownership',
+    () async {
+      store.values[FriendSnapshotJournal.historyKey] = jsonEncode([
+        record('legacy', owner: null),
+      ]);
+      store.values[FriendSnapshotJournal.journalKey] = jsonEncode({
+        'version': 1,
+        'revision': 2,
+        'lastOwner': 'B',
+        'deletions': {
+          'B': {
+            'old': {'revision': 2, 'pending': true},
+          },
+        },
+      });
+      await journal.saveHistory([], expectedOwner: 'B', queuePublication: true);
+      final batch = await journal.batch('B');
+      expect(batch.pending, false);
+      expect(batch.deletions, isEmpty);
+      final state = jsonDecode(store.values[FriendSnapshotJournal.journalKey]!);
+      expect(state['deletions']['B']['old']['pending'], true);
+    },
+  );
+  test('owned publication survives restart and newer revision survives late receipt', () async {
+    await journal.saveHistory(
+      [record('new')],
+      expectedOwner: 'A',
+      queuePublication: true,
+    );
+    final old = await journal.batch('A');
+    expect(old.publications.keys, ['new']);
+    expect((await journal.batch('B')).pending, false);
+    await journal.saveHistory(
+      [
+        {...record('new'), 'durationSeconds': 20},
+      ],
+      expectedOwner: 'A',
+      queuePublication: true,
+    );
+    journal = FriendSnapshotJournal(store: store);
+    await journal.acknowledge(
+      'A',
+      old.deletions,
+      publications: old.publications,
+    );
+    final current = await journal.batch('A');
+    expect(current.pending, true);
+    expect(current.publications['new'], greaterThan(old.publications['new']!));
+    await journal.acknowledge(
+      'A',
+      current.deletions,
+      publications: current.publications,
+    );
+    expect((await journal.batch('A')).pending, false);
+  });
+  test('deleting a queued record removes publication and journals only proved deletion', () async {
+    await journal.saveHistory(
+      [record('new')],
+      expectedOwner: 'A',
+      queuePublication: true,
+    );
+    await journal.saveHistory([], expectedOwner: 'A', queuePublication: true);
+    final batch = await journal.batch('A');
+    expect(batch.publications, isEmpty);
+    expect(batch.deletions.keys, unorderedEquals(['deleted', 'kept', 'new']));
+    expect((await journal.batch('B')).pending, false);
   });
   test(
     'offline deletion survives restart with only owner/date intent',
@@ -133,12 +201,12 @@ void main() {
       store.values[FriendSnapshotJournal.historyKey] = jsonEncode([
         record('other-trainer', owner: 'B'),
         record('own-trainer', owner: 'A'),
-        record('general'),
+        record('general', owner: null),
       ]);
       await journal.saveHistory([], expectedOwner: 'A');
       expect(
         (await journal.batch('A')).deletions.keys,
-        unorderedEquals(['own-trainer', 'general']),
+        unorderedEquals(['own-trainer']),
       );
       expect((await journal.batch('B')).deletions, isEmpty);
     },

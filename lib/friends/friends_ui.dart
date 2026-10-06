@@ -21,7 +21,6 @@ import '../main.dart'
         WorkoutRecord,
         WorkoutDetailExerciseCard,
         BodyMapPage,
-        LegalConsentPreference,
         ExerciseRecordTypeUi;
 import 'friends_repository.dart';
 
@@ -134,13 +133,6 @@ class _FriendsSectionState extends State<FriendsSection>
       await repo?.ensureProfile(
         await ProfilePreference.load(owner: repo?.userId),
       );
-      if (repo?.supportsMutualFriendSharing == true &&
-          await LegalConsentPreference.load()) {
-        await repo!.acknowledgeMutualSharing();
-      }
-      if (widget.historyReady) {
-        await repo?.publish(widget.history.map((w) => w.toJson()).toList());
-      }
       final result = await repo?.feed() ?? <Map<String, dynamic>>[];
       if (mounted && generation == refreshGeneration) {
         setState(() {
@@ -382,8 +374,8 @@ class _FriendsSettingsPageState extends State<FriendsSettingsPage>
       content: Text(
         label(
           context,
-          '相互承認したフレンドと、過去と今後のトレーニングの日時・種目・セット・所要時間を共有します。場所・メモ・体重は共有しません。',
-          'Mutually approved friends share past and future workout dates, exercises, sets and duration. Locations, notes and body weight stay private.',
+          '相互承認したフレンドと、このアカウントで記録したトレーニングの日時・種目・セット・所要時間を共有します。以前から端末にある記録は自動で追加共有しません。場所・メモ・体重は共有しません。',
+          'Share this account’s workout dates, exercises, sets and duration with mutually approved friends. Earlier records on this device are not automatically added. Locations, notes and body weight stay private.',
         ),
       ),
       actions: [
@@ -406,13 +398,7 @@ class _FriendsSettingsPageState extends State<FriendsSettingsPage>
   ) async {
     if (await consent(ja, en) != true || !mounted) return;
     await run(() async {
-      if (widget.repository.supportsMutualFriendSharing) {
-        await widget.repository.acknowledgeMutualSharing();
-      } else {
-        // Older servers still enforce their original per-owner sharing choice.
-        // This explicit confirmation grants only the current owner's sharing.
-        await widget.repository.saveProfile(displayName, 'friends');
-      }
+      await widget.repository.acknowledgeMutualSharing();
       if (!_sameViewer) throw StateError('Account changed');
       await action();
       await widget.repository.publish(

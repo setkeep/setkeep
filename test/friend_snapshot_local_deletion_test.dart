@@ -11,6 +11,7 @@ void main() {
     'signed-out HomeShell deletion persists owner intent through restart and Undo',
     (tester) async {
       final target = WorkoutRecord(
+        friendOwnerUserId: '81000000-0000-0000-0000-000000000001',
         date: DateTime(2026, 10, 1),
         gymName: 'Local gym',
         note: 'Local note',
@@ -24,6 +25,7 @@ void main() {
         ],
       );
       final kept = WorkoutRecord(
+        friendOwnerUserId: '81000000-0000-0000-0000-000000000001',
         date: DateTime(2026, 10, 2),
         gymName: 'Local gym',
         note: '',

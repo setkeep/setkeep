@@ -1286,6 +1286,10 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
         );
         if (!mounted || client.auth.currentUser?.id != userId) return;
         final updated = reconcileTrainerWorkouts(_history, rows, userId);
+        if (jsonEncode(updated.map((w) => w.toJson()).toList()) ==
+            jsonEncode(_history.map((w) => w.toJson()).toList())) {
+          return;
+        }
         await _persistHistory(updated, owner: userId);
         if (mounted && client.auth.currentUser?.id == userId) {
           setState(() => _history = updated);
@@ -1383,7 +1387,7 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
         workout,
         ..._history.where((w) => !_sameWorkout(w, workout)),
       ]);
-      await _persistHistory(updated, owner: owner);
+      await _persistHistory(updated, owner: owner, shareChanges: true);
       if (mounted) setState(() => _history = updated);
       unawaited(_syncHistory(updated));
     });
@@ -1392,12 +1396,16 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
   Future<void> _persistHistory(
     List<WorkoutRecord> history, {
     required String? owner,
+    bool shareChanges = false,
   }) async {
     await _friendJournal.saveHistory(
       history.map((item) => item.toJson()).toList(),
       expectedOwner: owner,
+      queuePublication: shareChanges,
     );
-    final friends = owner == _friendOwner ? configuredFriends() : null;
+    final friends = shareChanges && owner == _friendOwner
+        ? configuredFriends()
+        : null;
     if (friends != null) {
       unawaited(
         friends.publish(history.map((w) => w.toJson()).toList()).catchError((
@@ -1433,6 +1441,9 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
 
   Future<void> _replaceWorkout(WorkoutRecord original, WorkoutRecord workout) {
     final owner = _friendOwnerAtIntent;
+    workout = workout.withFriendOwner(
+      original.friendOwnerUserId == owner ? original.friendOwnerUserId : null,
+    );
     return _withHistoryMutation(() async {
       if (original.trainerWorkoutId != null) {
         await _trainerRecordRepository(original).updateRecordedWorkout(
@@ -1444,7 +1455,7 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
         if (workout.sets.isNotEmpty) workout,
         ..._history.where((item) => !_sameWorkout(item, original)),
       ]);
-      await _persistHistory(updated, owner: owner);
+      await _persistHistory(updated, owner: owner, shareChanges: true);
       if (mounted) setState(() => _history = updated);
       unawaited(_syncHistory(updated));
     });
@@ -1474,7 +1485,7 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
         final updated = _history
             .where((item) => !_sameWorkout(item, workout))
             .toList();
-        await _persistHistory(updated, owner: owner);
+        await _persistHistory(updated, owner: owner, shareChanges: true);
         if (mounted) setState(() => _history = updated);
         return true;
       } catch (error) {
@@ -6100,6 +6111,7 @@ class _WorkoutPageState extends State<WorkoutPage> with WidgetsBindingObserver {
   String? _gymName;
   GymStore? _gymStore;
   String? _customPlaceId;
+  String? _friendOwnerUserId;
   bool _placeInitializing = false;
   Future<void>? _placeInitialization;
   Timer? _timer;
@@ -6159,6 +6171,11 @@ class _WorkoutPageState extends State<WorkoutPage> with WidgetsBindingObserver {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     RestNotificationService.listen(() => unawaited(_syncRestState()));
+    _friendOwnerUserId = widget.isEditing
+        ? widget.initialWorkout?.friendOwnerUserId
+        : SupabaseConfig.initialized
+        ? Supabase.instance.client.auth.currentUser?.id
+        : null;
     _gymName = widget.isEditing
         ? widget.initialWorkout?.gymName
         : widget.gymName;
@@ -6867,6 +6884,8 @@ class _WorkoutPageState extends State<WorkoutPage> with WidgetsBindingObserver {
       _restoringDraft = true;
       setState(() {
         _inputRevision++;
+        // A legacy/shared draft cannot inherit the account used to reopen it.
+        _friendOwnerUserId = draft['friendOwnerUserId'] as String?;
         if (timerStopped) {
           _timer?.cancel();
           _timer = null;
@@ -6997,6 +7016,7 @@ class _WorkoutPageState extends State<WorkoutPage> with WidgetsBindingObserver {
       'elapsedSeconds': _elapsed.inSeconds,
       'timerStopped': _workoutTimerStopped,
       'date': _workoutDate.toIso8601String(),
+      if (_friendOwnerUserId != null) 'friendOwnerUserId': _friendOwnerUserId,
       'note': _noteController.text,
       'gymName': _gymName,
       'gymStoreId': _gymStore?.id,
@@ -7713,6 +7733,7 @@ class _WorkoutPageState extends State<WorkoutPage> with WidgetsBindingObserver {
           gymStoreId: _gymStore?.id,
           customPlaceId: _customPlaceId,
           note: _noteController.text.trim(),
+          friendOwnerUserId: _friendOwnerUserId,
           trainerWorkoutId: widget.isEditing
               ? widget.initialWorkout!.trainerWorkoutId
               : null,
@@ -10566,6 +10587,7 @@ class WorkoutRecord {
     this.note = '',
     this.trainerWorkoutId,
     this.trainerOwnerUserId,
+    this.friendOwnerUserId,
   });
 
   final DateTime date;
@@ -10579,6 +10601,23 @@ class WorkoutRecord {
   /// Supabase workouts.id. Only records with this ID are changed by trainer sync.
   final String? trainerWorkoutId;
   final String? trainerOwnerUserId;
+
+  /// Provenance for social sharing, captured when this session starts. This
+  /// does not partition or hide the device's existing local history.
+  final String? friendOwnerUserId;
+
+  WorkoutRecord withFriendOwner(String? owner) => WorkoutRecord(
+    date: date,
+    sets: sets,
+    durationSeconds: durationSeconds,
+    gymName: gymName,
+    gymStoreId: gymStoreId,
+    customPlaceId: customPlaceId,
+    note: note,
+    trainerWorkoutId: trainerWorkoutId,
+    trainerOwnerUserId: trainerOwnerUserId,
+    friendOwnerUserId: owner,
+  );
 
   Map<String, List<RecordedSet>> get exerciseGroups => groupRecordedSets(sets);
   List<String> get exerciseNames => exerciseGroups.values
@@ -10645,6 +10684,7 @@ class WorkoutRecord {
     note: json['note'] as String? ?? '',
     trainerWorkoutId: json['trainerWorkoutId'] as String?,
     trainerOwnerUserId: json['trainerOwnerUserId'] as String?,
+    friendOwnerUserId: json['friendOwnerUserId'] as String?,
     sets: (json['sets'] as List<dynamic>)
         .map((item) => RecordedSet.fromJson(item as Map<String, dynamic>))
         .toList(),
@@ -10669,6 +10709,7 @@ class WorkoutRecord {
     'note': note,
     if (trainerWorkoutId != null) 'trainerWorkoutId': trainerWorkoutId,
     if (trainerOwnerUserId != null) 'trainerOwnerUserId': trainerOwnerUserId,
+    if (friendOwnerUserId != null) 'friendOwnerUserId': friendOwnerUserId,
     'sets': sets.map((set) => set.toJson()).toList(),
   };
 }
