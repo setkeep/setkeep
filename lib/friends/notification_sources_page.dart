@@ -8,6 +8,8 @@ import '../main.dart' show WorkoutRecord;
 import '../trainer/trainer_inbox_page.dart';
 import '../trainer/trainer_inbox_repository.dart';
 import 'friend_comment_inbox.dart';
+import 'friend_like_inbox.dart';
+import 'friend_like_inbox_page.dart';
 import 'workout_comments.dart';
 import 'friends_ui.dart';
 
@@ -15,6 +17,9 @@ class NotificationSourcesPage extends StatefulWidget {
   const NotificationSourcesPage({
     super.key,
     this.friends,
+    this.likes,
+    this.visibleLikeClientIds,
+    this.onOpenLikedWorkout,
     this.trainer,
     this.showTrainerNotifications = trainerPublicAccessEnabled,
     required this.onStart,
@@ -22,6 +27,9 @@ class NotificationSourcesPage extends StatefulWidget {
   });
   final FriendCommentInboxRepository? friends;
   final TrainerInboxRepository? trainer;
+  final FriendLikeInboxRepository? likes;
+  final Set<String>? Function()? visibleLikeClientIds;
+  final Future<bool> Function(String clientId)? onOpenLikedWorkout;
   final bool showTrainerNotifications;
   final Future<void> Function(WorkoutRecord) onStart;
   final VoidCallback? onReadChanged;
@@ -34,7 +42,8 @@ class _NotificationSourcesPageState extends State<NotificationSourcesPage>
     with WidgetsBindingObserver {
   bool get _friendCommentsEnabled =>
       widget.friends?.friends.commentsEnabled == true;
-  int friends = 0, trainer = 0, generation = 0;
+  int friends = 0, trainer = 0, likes = 0, generation = 0;
+  StreamSubscription<dynamic>? likeAuth;
   String? error;
   StreamSubscription<void>? auth;
   String tr(String ja, String en) => label(context, ja, en);
@@ -45,6 +54,12 @@ class _NotificationSourcesPageState extends State<NotificationSourcesPage>
     auth = widget.trainer?.authChanges.listen((_) {
       friends = trainer = 0;
       unawaited(refresh());
+    });
+    likeAuth = widget.likes?.friends.client.auth.onAuthStateChange.listen((_) {
+      if (mounted) {
+        setState(() => likes = 0);
+        unawaited(refresh());
+      }
     });
     unawaited(refresh());
   }
@@ -57,7 +72,24 @@ class _NotificationSourcesPageState extends State<NotificationSourcesPage>
   Future<void> refresh() async {
     final current = ++generation;
     final errors = <String>[];
+    if (mounted) setState(() => likes = 0);
     await Future.wait([
+      if (widget.likes?.userId != null)
+        () async {
+          final owner = widget.likes!.userId;
+          try {
+            final count = await widget.likes!.unreadCount(
+              clientIds: widget.visibleLikeClientIds?.call(),
+            );
+            if (mounted &&
+                current == generation &&
+                widget.likes!.userId == owner) {
+              setState(() => likes = count);
+            }
+          } catch (_) {
+            errors.add('likes');
+          }
+        }(),
       if (_friendCommentsEnabled)
         () async {
           try {
@@ -103,6 +135,7 @@ class _NotificationSourcesPageState extends State<NotificationSourcesPage>
   void dispose() {
     generation++;
     auth?.cancel();
+    likeAuth?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
@@ -117,6 +150,24 @@ class _NotificationSourcesPageState extends State<NotificationSourcesPage>
         padding: const EdgeInsets.all(20),
         children: [
           if (error != null) Text(error!),
+          if (widget.likes?.userId != null)
+            Card(
+              child: ListTile(
+                key: const Key('likeNotificationSource'),
+                leading: const Icon(Icons.favorite_border_rounded),
+                title: Text(tr('いいね', 'Likes')),
+                subtitle: Text(tr('あなたのトレーニングへのいいね', 'Likes on your workouts')),
+                trailing: Text(tr('未読 $likes', '$likes unread')),
+                onTap: () => open(
+                  FriendLikeInboxPage(
+                    repository: widget.likes!,
+                    visibleClientIds: widget.visibleLikeClientIds,
+                    onOpenWorkout: widget.onOpenLikedWorkout,
+                    onReadChanged: widget.onReadChanged,
+                  ),
+                ),
+              ),
+            ),
           if (_friendCommentsEnabled)
             Card(
               child: ListTile(

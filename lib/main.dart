@@ -12,6 +12,10 @@ export 'activity_speed.dart';
 import 'design/setkeep_navigation.dart';
 import 'sharing/share_photo_frame.dart';
 import 'friends/friends_ui.dart';
+import 'friends/friends_repository.dart';
+import 'friends/history_workout_likes.dart';
+import 'friends/friend_like_inbox.dart';
+import 'friends/friend_like_inbox_page.dart';
 import 'ads/ads_config.dart';
 import 'ads/setkeep_banner_ad.dart';
 import 'ads/workout_interstitial.dart';
@@ -1737,6 +1741,7 @@ class DashboardPage extends StatelessWidget {
     required this.onDraftChanged,
     required this.onDraftDiscarded,
     this.inboxRepository,
+    this.likeInboxRepository,
     this.friendsHistoryReady = true,
     this.friendsRefresh = 0,
   });
@@ -1757,8 +1762,38 @@ class DashboardPage extends StatelessWidget {
   final Future<void> Function() onDraftChanged;
   final Future<void> Function() onDraftDiscarded;
   final TrainerInboxRepository? inboxRepository;
+  final FriendLikeInboxRepository? likeInboxRepository;
   final bool friendsHistoryReady;
   final int friendsRefresh;
+
+  Future<bool> _openLikedWorkout(BuildContext context, String clientId) async {
+    if (!friendsHistoryReady) return false;
+    final matches = history.where(
+      (w) => w.trainerWorkoutId == null && w.date.toIso8601String() == clientId,
+    );
+    if (matches.isEmpty) return false;
+    final messenger = ScaffoldMessenger.of(context);
+    final completed = Navigator.of(context).push<WorkoutRecord>(
+      MaterialPageRoute(
+        builder: (_) => WorkoutDetailPage(
+          workout: matches.first,
+          selectedGym: selectedGym,
+          onWorkoutCompleted: onWorkoutCompleted,
+          onWorkoutUpdated: onWorkoutUpdated,
+          onWorkoutDeleted: onWorkoutDeleted,
+          friendsRepository: likeInboxRepository?.friends,
+        ),
+      ),
+    );
+    unawaited(
+      completed.then<void>((deleted) {
+        if (deleted != null && messenger.mounted) {
+          _showDeletedWorkoutUndo(messenger, deleted, onWorkoutCompleted);
+        }
+      }),
+    );
+    return true;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1772,6 +1807,14 @@ class DashboardPage extends StatelessWidget {
           children: [
             HomeHeader(
               repository: inboxRepository,
+              likeRepository: likeInboxRepository,
+              likeClientIds: friendsHistoryReady
+                  ? history
+                        .where((w) => w.trainerWorkoutId == null)
+                        .map((w) => w.date.toIso8601String())
+                        .toSet()
+                  : <String>{},
+              onOpenLikedWorkout: (id) => _openLikedWorkout(context, id),
               onStart: (record) =>
                   _startWorkout(context, initialWorkout: record),
             ),
@@ -2482,6 +2525,9 @@ class HomeHeader extends StatefulWidget {
     required this.onStart,
     this.repository,
     this.friendRepository,
+    this.likeRepository,
+    this.likeClientIds,
+    this.onOpenLikedWorkout,
     this.showTrainerNotifications = trainerPublicAccessEnabled,
   });
 
@@ -2489,6 +2535,9 @@ class HomeHeader extends StatefulWidget {
   final TrainerInboxRepository? repository;
   final FriendCommentInboxRepository? friendRepository;
   final bool showTrainerNotifications;
+  final FriendLikeInboxRepository? likeRepository;
+  final Set<String>? likeClientIds;
+  final Future<bool> Function(String clientId)? onOpenLikedWorkout;
 
   @override
   State<HomeHeader> createState() => _HomeHeaderState();
@@ -2516,6 +2565,9 @@ class _HomeHeaderState extends State<HomeHeader> with WidgetsBindingObserver {
   Timer? _refreshTimer;
   int _unreadCount = 0;
   int _friendUnreadCount = 0;
+  int _likeUnreadCount = 0;
+  FriendLikeInboxRepository? _likes;
+  StreamSubscription<dynamic>? _likeAuth;
   int _generation = 0;
   bool _active = true;
 
@@ -2523,8 +2575,9 @@ class _HomeHeaderState extends State<HomeHeader> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _configureLikes();
     FriendsRefresh.listen(_refresh);
-    if (_repository != null || _friends != null) {
+    if (_repository != null || _friends != null || _likes != null) {
       _authSubscription = _repository?.authChanges.listen((_) {
         setState(() {
           _unreadCount = 0;
@@ -2539,15 +2592,44 @@ class _HomeHeaderState extends State<HomeHeader> with WidgetsBindingObserver {
     }
   }
 
+  void _configureLikes() {
+    _likeAuth?.cancel();
+    final friends = configuredFriends();
+    _likes =
+        widget.likeRepository ??
+        (friends == null ? null : FriendLikeInboxRepository(friends));
+    _likeAuth = _likes?.friends.client.auth.onAuthStateChange.listen((_) {
+      if (mounted) {
+        setState(() => _likeUnreadCount = 0);
+        unawaited(_refresh());
+      }
+    });
+  }
+
+  @override
+  void didUpdateWidget(HomeHeader old) {
+    super.didUpdateWidget(old);
+    if (old.likeRepository != widget.likeRepository) _configureLikes();
+    if (old.likeRepository != widget.likeRepository ||
+        old.likeClientIds != widget.likeClientIds) {
+      unawaited(_refresh());
+    }
+  }
+
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     _active = state == AppLifecycleState.resumed;
+    if (!_active) {
+      _generation++;
+      setState(() => _likeUnreadCount = 0);
+    }
     if (_active) unawaited(_refresh());
   }
 
   Future<void> _refresh() async {
     final current = ++_generation;
-    final uid = _repository?.userId ?? _friends?.userId;
+    final uid = _repository?.userId ?? _friends?.userId ?? _likes?.userId;
+    if (mounted) setState(() => _likeUnreadCount = 0);
     if (uid == null) {
       if (mounted) {
         setState(() {
@@ -2579,18 +2661,51 @@ class _HomeHeaderState extends State<HomeHeader> with WidgetsBindingObserver {
     } catch (_) {
       /* Keep the last count on a transient failure. */
     }
+    await _refreshLikes(current);
+  }
+
+  Future<void> _refreshLikes(int generation) async {
+    final repo = _likes;
+    final owner = repo?.userId;
+    if (repo == null || owner == null) return;
+    try {
+      final count = await repo.unreadCount(clientIds: widget.likeClientIds);
+      if (mounted &&
+          generation == _generation &&
+          _active &&
+          repo.userId == owner) {
+        setState(() => _likeUnreadCount = count);
+      }
+    } catch (_) {
+      // Never preserve revoked/private like information on a failed refresh.
+    }
   }
 
   Future<void> _openInbox() async {
     await Navigator.of(context).push<void>(
       MaterialPageRoute(
-        builder: (_) => NotificationSourcesPage(
-          trainer: _repository,
-          showTrainerNotifications: widget.showTrainerNotifications,
-          friends: _friends,
-          onStart: widget.onStart,
-          onReadChanged: () => unawaited(_refresh()),
-        ),
+        builder: (_) =>
+            !widget.showTrainerNotifications &&
+                _friends == null &&
+                _likes != null
+            ? FriendLikeInboxPage(
+                repository: _likes!,
+                visibleClientIds: () => widget.likeClientIds,
+                onOpenWorkout: (id) async =>
+                    await widget.onOpenLikedWorkout?.call(id) ?? false,
+                onReadChanged: () => unawaited(_refresh()),
+              )
+            : NotificationSourcesPage(
+                likes: _likes,
+                visibleLikeClientIds: () => widget.likeClientIds,
+                onOpenLikedWorkout: (id) async =>
+                    await widget.onOpenLikedWorkout?.call(id) ?? false,
+                trainer: _repository,
+                showTrainerNotifications: widget.showTrainerNotifications,
+                friends: _friends,
+                onStart: widget.onStart,
+                onReadChanged: () => unawaited(_refresh()),
+              ),
       ),
     );
     if (mounted) await _refresh();
@@ -2601,6 +2716,7 @@ class _HomeHeaderState extends State<HomeHeader> with WidgetsBindingObserver {
     _generation++;
     _refreshTimer?.cancel();
     _authSubscription?.cancel();
+    _likeAuth?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     FriendsRefresh.unlisten(_refresh);
     super.dispose();
@@ -2623,7 +2739,9 @@ class _HomeHeaderState extends State<HomeHeader> with WidgetsBindingObserver {
             ),
           ),
         ),
-        if (widget.showTrainerNotifications || _friends != null)
+        if (widget.showTrainerNotifications ||
+            _friends != null ||
+            _likes?.userId != null)
           Container(
             width: 46,
             height: 46,
@@ -2639,14 +2757,16 @@ class _HomeHeaderState extends State<HomeHeader> with WidgetsBindingObserver {
                   tooltip: Localizations.localeOf(context).languageCode == 'ja'
                       ? (widget.showTrainerNotifications
                             ? 'フレンド・トレーナーからの通知'
-                            : 'フレンドからの通知')
+                            : (_friends == null ? 'いいね通知' : 'フレンドからの通知'))
                       : (widget.showTrainerNotifications
                             ? 'Notifications from friends and your trainer'
-                            : 'Notifications from friends'),
+                            : (_friends == null
+                                  ? 'Like notifications'
+                                  : 'Notifications from friends')),
                   onPressed: _openInbox,
                   icon: const Icon(Icons.notifications_none_rounded),
                 ),
-                if (_unreadCount + _friendUnreadCount > 0)
+                if (_unreadCount + _friendUnreadCount + _likeUnreadCount > 0)
                   Positioned(
                     right: -3,
                     top: -3,
@@ -2664,9 +2784,10 @@ class _HomeHeaderState extends State<HomeHeader> with WidgetsBindingObserver {
                       ),
                       alignment: Alignment.center,
                       child: Text(
-                        _unreadCount + _friendUnreadCount > 99
+                        _unreadCount + _friendUnreadCount + _likeUnreadCount >
+                                99
                             ? '99+'
-                            : '${_unreadCount + _friendUnreadCount}',
+                            : '${_unreadCount + _friendUnreadCount + _likeUnreadCount}',
                         style: const TextStyle(
                           color: AppColors.ink,
                           fontSize: 10,
@@ -5442,7 +5563,7 @@ class WorkoutDetailExerciseCard extends StatelessWidget {
   }
 }
 
-class WorkoutDetailPage extends StatelessWidget {
+class WorkoutDetailPage extends StatefulWidget {
   const WorkoutDetailPage({
     super.key,
     required this.workout,
@@ -5450,6 +5571,7 @@ class WorkoutDetailPage extends StatelessWidget {
     required this.onWorkoutCompleted,
     required this.onWorkoutUpdated,
     required this.onWorkoutDeleted,
+    this.friendsRepository,
   });
 
   final WorkoutRecord workout;
@@ -5457,6 +5579,24 @@ class WorkoutDetailPage extends StatelessWidget {
   final Future<void> Function(WorkoutRecord) onWorkoutCompleted;
   final Future<void> Function(WorkoutRecord, WorkoutRecord) onWorkoutUpdated;
   final Future<bool> Function(WorkoutRecord) onWorkoutDeleted;
+
+  final FriendsRepository? friendsRepository;
+  @override
+  State<WorkoutDetailPage> createState() => _WorkoutDetailPageState();
+}
+
+class _WorkoutDetailPageState extends State<WorkoutDetailPage> {
+  final _likesKey = GlobalKey<HistoryWorkoutLikesState>();
+  late final FriendsRepository? _friends =
+      widget.friendsRepository ?? configuredFriends();
+  WorkoutRecord get workout => widget.workout;
+  String? get selectedGym => widget.selectedGym;
+  Future<void> Function(WorkoutRecord) get onWorkoutCompleted =>
+      widget.onWorkoutCompleted;
+  Future<void> Function(WorkoutRecord, WorkoutRecord) get onWorkoutUpdated =>
+      widget.onWorkoutUpdated;
+  Future<bool> Function(WorkoutRecord) get onWorkoutDeleted =>
+      widget.onWorkoutDeleted;
 
   @override
   Widget build(BuildContext context) {
@@ -5504,105 +5644,115 @@ class WorkoutDetailPage extends StatelessWidget {
           ),
         ],
       ),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(20, 12, 20, 40),
-        children: [
-          Text(
-            '${workout.date.year}年${workout.date.month}月${workout.date.day}日',
-            style: const TextStyle(color: Color(0xFF6C746D)),
-          ),
-          if (workout.gymName != null && workout.gymName!.isNotEmpty) ...[
-            const SizedBox(height: 6),
-            Row(
-              children: [
-                const Icon(
-                  Icons.location_on_outlined,
-                  size: 16,
-                  color: Color(0xFF6C746D),
-                ),
-                const SizedBox(width: 4),
-                Text(
-                  workout.gymName!,
-                  style: const TextStyle(color: Color(0xFF6C746D)),
-                ),
-              ],
+      body: RefreshIndicator(
+        onRefresh: () async => await _likesKey.currentState?.refresh(),
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.fromLTRB(20, 12, 20, 40),
+          children: [
+            Text(
+              '${workout.date.year}年${workout.date.month}月${workout.date.day}日',
+              style: const TextStyle(color: Color(0xFF6C746D)),
             ),
-          ],
-          const SizedBox(height: 10),
-          _WorkoutDetailSummary(workout: workout),
-          if (configuredFriends()?.commentsEnabled == true &&
-              workout.trainerWorkoutId == null)
-            HistoryWorkoutCommentsEntry(
-              repository: configuredFriends()!,
-              clientId: workout.date.toIso8601String(),
-            ),
-          if (workout.note.isNotEmpty) ...[
-            const SizedBox(height: 16),
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(18),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+            if (workout.gymName != null && workout.gymName!.isNotEmpty) ...[
+              const SizedBox(height: 6),
+              Row(
                 children: [
-                  if (workout.trainerWorkoutId != null) ...[
-                    const Text(
-                      'トレーナーからのコメント',
-                      style: TextStyle(fontWeight: FontWeight.w800),
-                    ),
-                    const SizedBox(height: 10),
-                  ],
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Icon(Icons.notes_rounded),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Text(
-                          workout.note,
-                          style: const TextStyle(color: Color(0xFF6C746D)),
-                        ),
-                      ),
-                    ],
+                  const Icon(
+                    Icons.location_on_outlined,
+                    size: 16,
+                    color: Color(0xFF6C746D),
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    workout.gymName!,
+                    style: const TextStyle(color: Color(0xFF6C746D)),
                   ),
                 ],
               ),
+            ],
+            const SizedBox(height: 10),
+            _WorkoutDetailSummary(workout: workout),
+            if (configuredFriends()?.commentsEnabled == true &&
+                workout.trainerWorkoutId == null)
+              HistoryWorkoutCommentsEntry(
+                repository: configuredFriends()!,
+                clientId: workout.date.toIso8601String(),
+              ),
+            if (workout.note.isNotEmpty) ...[
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(18),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (workout.trainerWorkoutId != null) ...[
+                      const Text(
+                        'トレーナーからのコメント',
+                        style: TextStyle(fontWeight: FontWeight.w800),
+                      ),
+                      const SizedBox(height: 10),
+                    ],
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Icon(Icons.notes_rounded),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            workout.note,
+                            style: const TextStyle(color: Color(0xFF6C746D)),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
+            const SizedBox(height: 22),
+            ...workout.exerciseGroups.values.map(
+              (sets) => WorkoutDetailExerciseCard(sets: sets),
+            ),
+            if (_friends != null && workout.trainerWorkoutId == null)
+              HistoryWorkoutLikes(
+                key: _likesKey,
+                repository: _friends!,
+                clientId: workout.date.toIso8601String(),
+              ),
+            const SizedBox(height: 8),
+            SizedBox(
+              height: 54,
+              child: FilledButton.icon(
+                key: const Key('repeatWorkoutButton'),
+                onPressed: () async {
+                  final canStart = await discardDraftBeforeNewWorkout(context);
+                  if (!canStart || !context.mounted) return;
+                  final place = await TrainingPlacePreference.forNewWorkout();
+                  if (!context.mounted) return;
+                  await Navigator.of(context).push<WorkoutRecord>(
+                    MaterialPageRoute(
+                      builder: (_) => WorkoutPage(
+                        history: [workout],
+                        initialWorkout: workout,
+                        initialPlace: place,
+                        useDefaultPlace: true,
+                        resumeDraft: false,
+                        onSave: onWorkoutCompleted,
+                      ),
+                    ),
+                  );
+                },
+                icon: const Icon(Icons.replay_rounded),
+                label: const Text('この内容でもう一度'),
+              ),
             ),
           ],
-          const SizedBox(height: 22),
-          ...workout.exerciseGroups.values.map(
-            (sets) => WorkoutDetailExerciseCard(sets: sets),
-          ),
-          const SizedBox(height: 8),
-          SizedBox(
-            height: 54,
-            child: FilledButton.icon(
-              key: const Key('repeatWorkoutButton'),
-              onPressed: () async {
-                final canStart = await discardDraftBeforeNewWorkout(context);
-                if (!canStart || !context.mounted) return;
-                final place = await TrainingPlacePreference.forNewWorkout();
-                if (!context.mounted) return;
-                await Navigator.of(context).push<WorkoutRecord>(
-                  MaterialPageRoute(
-                    builder: (_) => WorkoutPage(
-                      history: [workout],
-                      initialWorkout: workout,
-                      initialPlace: place,
-                      useDefaultPlace: true,
-                      resumeDraft: false,
-                      onSave: onWorkoutCompleted,
-                    ),
-                  ),
-                );
-              },
-              icon: const Icon(Icons.replay_rounded),
-              label: const Text('この内容でもう一度'),
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }

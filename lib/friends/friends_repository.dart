@@ -420,6 +420,27 @@ class FriendsRepository {
     return rows.map((row) => {...row, 'avatar_path': null}).toList();
   }
 
+  /// Server-scoped active notifications, independently of comment rollout.
+  Future<List<Map<String, dynamic>>> receivedLikes() async {
+    final owner = client.auth.currentUser?.id;
+    if (owner == null) return [];
+    final result = <Map<String, dynamic>>[];
+    for (var offset = 0; ; offset += 100) {
+      final page = await client
+          .rpc('received_friend_likes')
+          .order('created_at', ascending: false)
+          .order('workout_id', ascending: true)
+          .order('user_id', ascending: true)
+          .range(offset, offset + 99);
+      if (client.auth.currentUser?.id != owner) {
+        throw StateError('Account changed');
+      }
+      result.addAll(List<Map<String, dynamic>>.from(page));
+      if (page.length < 100) break;
+    }
+    return result;
+  }
+
   Future<void> like(String id, bool liked) async {
     if (liked) {
       await client.from('friend_likes').insert({

@@ -117,15 +117,16 @@ void main() {
   }
   testWidgets('large values and text scale fit one row at 280px', (t) async {
     final record = detailFixture(weight: 12345678);
-    // Isolate the requested summary from unchanged detail rows at large text scale.
+    // Mount the real detail page before isolating its summary for large text.
+    await t.pumpWidget(MaterialApp(home: detailPage(record)));
+    await t.pumpAndSettle();
+    final summary = t.widget<Container>(
+      find.byKey(const Key('workoutDetailSummary')),
+    );
     await t.pumpWidget(
       MaterialApp(
         home: Builder(
           builder: (context) {
-            final page = detailPage(record).build(context) as Scaffold;
-            final list = page.body! as ListView;
-            final children =
-                (list.childrenDelegate as SliverChildListDelegate).children;
             return Scaffold(
               body: Center(
                 child: SizedBox(
@@ -133,7 +134,7 @@ void main() {
                   child: MediaQuery(
                     data: MediaQuery.of(context)
                         .copyWith(textScaler: const TextScaler.linear(2)),
-                    child: children[2],
+                    child: summary,
                   ),
                 ),
               ),
