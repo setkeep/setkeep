@@ -527,11 +527,15 @@ void main() {
       await tester.pumpAndSettle();
       expect(auth.signUps, 1);
       expect(
-        find.text(session ? 'アカウントを作成しました' : '確認メールを送りました。メールを開いて登録を完了してください。'),
+        find.text(session ? 'アカウントを作成しました' : 'Confirmation email sent'),
         findsOneWidget,
       );
       expect(SupabaseSyncService.canUseCloud, isFalse);
       expect(syncs, 0);
+      if (!session) {
+        expect(find.byKey(const Key('cloudBackupButton')), findsNothing);
+        return;
+      }
       await tester.ensureVisible(find.byKey(const Key('cloudBackupButton')));
       expect(
         tester

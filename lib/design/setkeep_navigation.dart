@@ -10,17 +10,19 @@ class SetkeepNavigation extends StatelessWidget {
   });
   final int selectedIndex;
   final ValueChanged<int> onSelected;
-  static const labels = ['ホーム', '履歴', '部位', 'マイページ'];
+  static const labels = ['ホーム', '履歴', '部位', 'フレンド', 'マイページ'];
   static const icons = [
     Icons.home_outlined,
     Icons.calendar_month_outlined,
     Icons.accessibility_new_outlined,
+    Icons.people_outline,
     Icons.person_outline_rounded,
   ];
   static const selectedIcons = [
     Icons.home_rounded,
     Icons.calendar_month_rounded,
     Icons.accessibility_new_rounded,
+    Icons.people_rounded,
     Icons.person_rounded,
   ];
 

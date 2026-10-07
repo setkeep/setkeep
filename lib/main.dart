@@ -12,6 +12,7 @@ export 'activity_speed.dart';
 import 'design/setkeep_navigation.dart';
 import 'sharing/share_photo_frame.dart';
 import 'friends/friends_ui.dart';
+import 'friends/friends_tab_page.dart';
 import 'friends/friends_repository.dart';
 import 'friends/history_workout_likes.dart';
 import 'friends/friend_like_inbox.dart';
@@ -1079,7 +1080,9 @@ class _OnboardingPageState extends State<_OnboardingPage> {
 }
 
 class HomeShell extends StatefulWidget {
-  const HomeShell({super.key});
+  const HomeShell({super.key, this.friendsRepository});
+
+  final FriendsRepository? friendsRepository;
 
   @override
   State<HomeShell> createState() => _HomeShellState();
@@ -1685,6 +1688,15 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
         onWorkoutDeleted: _deleteWorkout,
       ),
       BodyMapPage(history: _visibleHistory, active: _selectedIndex == 2),
+      FriendsTabPage(
+        key: ValueKey(
+          widget.friendsRepository?.userId ?? configuredFriends()?.userId,
+        ),
+        repository: widget.friendsRepository,
+        history: _visibleHistory,
+        historyReady: _historyLoaded,
+        refreshToken: _friendsRefresh,
+      ),
       ProfilePage(
         selectedGym: _selectedGym,
         history: _visibleHistory,
@@ -1723,10 +1735,10 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
         selectedIndex: _selectedIndex,
         onSelected: (index) {
           setState(() => _selectedIndex = index);
-          if (index == 0) {
+          if (index == 0 || index == 3) {
             setState(() => _friendsRefresh++);
-            unawaited(_refreshWorkoutDraft());
           }
+          if (index == 0) unawaited(_refreshWorkoutDraft());
         },
       ),
     );
@@ -1868,13 +1880,6 @@ class DashboardPage extends StatelessWidget {
                 onDeleted: onBodyWeightDeleted,
               ),
             ],
-            const SizedBox(height: 24),
-            FriendsSection(
-              key: ValueKey(configuredFriends()?.userId),
-              history: history,
-              historyReady: friendsHistoryReady,
-              refreshToken: friendsRefresh,
-            ),
           ],
         ),
       ),
@@ -6024,21 +6029,31 @@ List<Widget> _exerciseShareRows(WorkoutRecord workout) {
       sets.first.exerciseName,
       exerciseId: sets.first.exerciseId,
     );
-    final type = sets.first.recordType;
-    final best = type == ExerciseRecordType.weightReps
-        ? sets.reduce((a, b) => b.weight > a.weight ? b : a)
-        : sets.first;
-    final summary = switch (type) {
-      ExerciseRecordType.weightReps ||
-      ExerciseRecordType.assistedReps ||
-      ExerciseRecordType.bodyweightReps =>
-        '${best.displaySummary}  /  ${sets.length} セット',
-      ExerciseRecordType.timed =>
-        '${best.displaySummary}  /  ${sets.length} セット',
-      ExerciseRecordType.cardio ||
-      ExerciseRecordType.distance ||
-      ExerciseRecordType.loadedDistance => best.displaySummary,
-    };
+    // Keep the recorded value combinations, including warm-up sets. Choosing
+    // one representative set must not label every set with its weight/reps.
+    final sameValues = <Object, List<RecordedSet>>{};
+    for (final set in sets) {
+      final key = switch (set.recordType) {
+        ExerciseRecordType.weightReps || ExerciseRecordType.assistedReps => (
+          set.recordType,
+          set.weight,
+          set.reps,
+        ),
+        ExerciseRecordType.bodyweightReps => (set.recordType, set.reps),
+        ExerciseRecordType.timed => (set.recordType, set.durationSeconds),
+        // Activities are individual entries, with all their own metrics.
+        ExerciseRecordType.cardio ||
+        ExerciseRecordType.distance ||
+        ExerciseRecordType.loadedDistance => Object(),
+      };
+      sameValues.putIfAbsent(key, () => []).add(set);
+    }
+    final summaries = [
+      for (final matching in sameValues.values)
+        matching.first.recordType.usesSets
+            ? '${matching.first.displaySummary}  /  ${matching.length} セット'
+            : matching.first.displaySummary,
+    ];
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: Column(
@@ -6062,14 +6077,15 @@ List<Widget> _exerciseShareRows(WorkoutRecord workout) {
               ),
             ),
           ),
-          Text(
-            summary,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 13,
-              fontWeight: FontWeight.w700,
+          for (final summary in summaries)
+            Text(
+              summary,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+              ),
             ),
-          ),
         ],
       ),
     );
@@ -7223,10 +7239,12 @@ class _WorkoutPageState extends State<WorkoutPage> with WidgetsBindingObserver {
               ),
             OutlinedButton(
               key: const Key('completeWorkoutButton'),
-              onPressed: _completing ? null : _completeWorkout,
+              onPressed: _canCompleteWorkout ? _completeWorkout : null,
               style: OutlinedButton.styleFrom(
                 foregroundColor: Colors.white,
+                disabledForegroundColor: const Color(0xFF68767D),
                 backgroundColor: const Color(0xFF426B83),
+                disabledBackgroundColor: const Color(0xFFDDE3E5),
                 side: const BorderSide(color: Color(0xFF426B83), width: 1.5),
                 padding: const EdgeInsets.symmetric(
                   horizontal: 14,
@@ -7632,9 +7650,48 @@ class _WorkoutPageState extends State<WorkoutPage> with WidgetsBindingObserver {
     );
   }
 
+  bool get _hasWorkoutEntries =>
+      _exercises.any((exercise) => exercise.sets.isNotEmpty);
+
+  bool get _hasUncheckedSets =>
+      WorkoutUiPreference.completionCheckEnabled &&
+      _exercises.any(
+        (exercise) =>
+            exercise.recordType.usesSets &&
+            exercise.sets.any((set) => !set.completed),
+      );
+
+  bool get _canCompleteWorkout =>
+      !_completing &&
+      !_exiting &&
+      !_placeInitializing &&
+      !_deletingWorkoutItem &&
+      (_savedRecord != null || (_hasWorkoutEntries && !_hasUncheckedSets));
+
+  bool _validateCompletionChecks() {
+    if (_savedRecord != null) return true;
+    final english = Localizations.localeOf(context).languageCode == 'en';
+    final message = _hasUncheckedSets
+        ? (english
+              ? 'Check every remaining set before finishing.'
+              : '残っているセットをすべてチェックしてください')
+        : !_hasWorkoutEntries
+        ? (english
+              ? 'Add an exercise or set to record.'
+              : '記録する種目・セットを追加してください')
+        : null;
+    if (message == null) return true;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
+    return false;
+  }
+
   Future<void> _completeWorkout() async {
-    if (_deletingWorkoutItem) return;
+    if (_deletingWorkoutItem || _placeInitializing) return;
     if (_completing || _exiting) return;
+    // A queued/stale callback must never silently discard unchecked inputs.
+    if (!_validateCompletionChecks()) return;
     if (Platform.isAndroid && !widget.isEditing) {
       setState(() => _completing = true);
       try {
@@ -7651,30 +7708,29 @@ class _WorkoutPageState extends State<WorkoutPage> with WidgetsBindingObserver {
       if (!mounted) return;
       setState(() => _completing = false);
     }
+    // Recheck after native reconciliation, before saving or clearing the draft.
+    if (!_validateCompletionChecks()) return;
     _formKey.currentState?.save();
     final completedSets = <RecordedSet>[
       for (final exercise in _exercises)
         for (final set in exercise.sets)
-          if (!WorkoutUiPreference.completionCheckEnabled ||
-              !exercise.recordType.usesSets ||
-              set.completed)
-            RecordedSet(
-              exerciseName: exercise.name,
-              exerciseId: exercise.exerciseId,
-              equipment: exercise.equipment,
-              distanceUnit: exercise.distanceUnit,
-              bodyPart: exercise.bodyPart,
-              recordType: exercise.recordType,
-              weight: set.weight,
-              reps: set.reps,
-              durationSeconds: set.durationSeconds,
-              distanceKm: set.distanceKm,
-              speedKmh: set.speedKmh,
-              inclinePercent: set.inclinePercent,
-              resistanceLevel: set.resistanceLevel,
-              paceSecondsPerKm: set.paceSecondsPerKm,
-              completed: true,
-            ),
+          RecordedSet(
+            exerciseName: exercise.name,
+            exerciseId: exercise.exerciseId,
+            equipment: exercise.equipment,
+            distanceUnit: exercise.distanceUnit,
+            bodyPart: exercise.bodyPart,
+            recordType: exercise.recordType,
+            weight: set.weight,
+            reps: set.reps,
+            durationSeconds: set.durationSeconds,
+            distanceKm: set.distanceKm,
+            speedKmh: set.speedKmh,
+            inclinePercent: set.inclinePercent,
+            resistanceLevel: set.resistanceLevel,
+            paceSecondsPerKm: set.paceSecondsPerKm,
+            completed: true,
+          ),
     ];
     if (completedSets.isEmpty) {
       ScaffoldMessenger.of(
@@ -12971,6 +13027,7 @@ class CloudAccountPage extends StatefulWidget {
 class _CloudAccountPageState extends State<CloudAccountPage> {
   static const _authStateErrorMessage = 'ログイン状態を確認できませんでした。もう一度お試しください。';
   final _formKey = GlobalKey<FormState>();
+  final _scrollController = ScrollController();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _passwordConfirmationController = TextEditingController();
@@ -12980,6 +13037,13 @@ class _CloudAccountPageState extends State<CloudAccountPage> {
   bool _busy = false;
   bool _confirmingDeletion = false;
   String? _message;
+  String? _confirmationEmail;
+  bool _registrationFailed = false;
+  bool _sendingRegistration = false;
+  bool _messageIsError = false;
+
+  String _text(String ja, String en) =>
+      Localizations.localeOf(context).languageCode == 'en' ? en : ja;
 
   @override
   void initState() {
@@ -12991,7 +13055,11 @@ class _CloudAccountPageState extends State<CloudAccountPage> {
         _passwordController.clear();
         _passwordConfirmationController.clear();
         setState(() {
-          if (_auth?.isSignedIn == true) _isSignUp = false;
+          if (_auth?.isSignedIn == true) {
+            _isSignUp = false;
+            _confirmationEmail = null;
+            _registrationFailed = false;
+          }
           if (_message == _authStateErrorMessage) _message = null;
         });
       },
@@ -13000,7 +13068,8 @@ class _CloudAccountPageState extends State<CloudAccountPage> {
         // Callback errors arrive after the browser launch Future completes.
         // Do not expose raw SDK errors, which may include connection values.
         setState(() {
-          _busy = false;
+          // Only the action Future releases the in-flight request guard.
+          _messageIsError = true;
           _message = _authStateErrorMessage;
         });
       },
@@ -13010,26 +13079,49 @@ class _CloudAccountPageState extends State<CloudAccountPage> {
   @override
   void dispose() {
     _authSubscription?.cancel();
+    _scrollController.dispose();
     _emailController.dispose();
     _passwordController.dispose();
     _passwordConfirmationController.dispose();
     super.dispose();
   }
 
-  Future<void> _run(Future<void> Function() action) async {
+  Future<void> _run(
+    Future<void> Function() action, {
+    bool registration = false,
+  }) async {
     if (_busy || _auth == null) return;
     setState(() {
       _busy = true;
+      _sendingRegistration = registration;
       _message = null;
+      _messageIsError = false;
+      _registrationFailed = false;
     });
     try {
       await action();
     } on AuthException catch (error) {
       _message = error.message;
+      _messageIsError = true;
+      _registrationFailed = registration;
     } catch (_) {
-      _message = '通信に失敗しました。接続を確認してください。';
+      if (!mounted) return;
+      _message = _text(
+        '通信に失敗しました。接続を確認して、もう一度お試しください。',
+        'Connection failed. Check your connection and try again.',
+      );
+      _messageIsError = true;
+      _registrationFailed = registration;
     } finally {
-      if (mounted) setState(() => _busy = false);
+      if (mounted) {
+        setState(() {
+          _busy = false;
+          _sendingRegistration = false;
+        });
+        if (registration && _scrollController.hasClients) {
+          _scrollController.jumpTo(0);
+        }
+      }
     }
   }
 
@@ -13043,11 +13135,48 @@ class _CloudAccountPageState extends State<CloudAccountPage> {
     setState(() {
       _isSignUp = !_isSignUp;
       _message = null;
+      _messageIsError = false;
+      _registrationFailed = false;
     });
   }
 
+  void _returnToSignIn() {
+    if (_busy) return;
+    if (_scrollController.hasClients) _scrollController.jumpTo(0);
+    final email = _emailController.text;
+    _formKey.currentState?.reset();
+    _emailController.text = email;
+    _passwordController.clear();
+    _passwordConfirmationController.clear();
+    setState(() {
+      _isSignUp = false;
+      _confirmationEmail = null;
+      _message = null;
+      _messageIsError = false;
+      _registrationFailed = false;
+    });
+  }
+
+  void _back() {
+    if (_busy) return;
+    if (_isSignUp || _confirmationEmail != null) {
+      _returnToSignIn();
+    } else {
+      Navigator.of(context).maybePop();
+    }
+  }
+
+  void _close() {
+    if (_busy) return;
+    if (Navigator.of(context).canPop()) {
+      Navigator.of(context).pop();
+    } else {
+      _returnToSignIn();
+    }
+  }
+
   Future<void> _signIn() async {
-    if (!_formKey.currentState!.validate()) return;
+    if (_busy || _formKey.currentState?.validate() != true) return;
     await _run(() async {
       await _auth!.signIn(
         _emailController.text.trim(),
@@ -13062,20 +13191,32 @@ class _CloudAccountPageState extends State<CloudAccountPage> {
   }
 
   Future<void> _signUp() async {
-    if (!_formKey.currentState!.validate()) return;
+    if (_busy ||
+        _auth?.isSignedIn == true ||
+        _confirmationEmail != null ||
+        _formKey.currentState?.validate() != true) {
+      return;
+    }
+    final email = _emailController.text.trim();
+    final password = _passwordController.text;
+    FocusManager.instance.primaryFocus?.unfocus();
     await _run(() async {
-      final hasSession = await _auth!.signUp(
-        _emailController.text.trim(),
-        _passwordController.text,
-      );
-      if (mounted) {
-        _passwordController.clear();
-        _passwordConfirmationController.clear();
+      final hasSession = await _auth!.signUp(email, password);
+      if (!mounted) return;
+      _emailController.text = email;
+      _passwordController.clear();
+      _passwordConfirmationController.clear();
+      if (hasSession || _auth!.isSignedIn) {
+        _isSignUp = false;
+        _message = 'アカウントを作成しました';
+      } else {
+        // Use the same route so the required-account gate can replace this
+        // page when verification creates a session.
+        _confirmationEmail = email;
+        _message = null;
       }
-      _message = hasSession
-          ? 'アカウントを作成しました'
-          : '確認メールを送りました。メールを開いて登録を完了してください。';
-    });
+      _messageIsError = false;
+    }, registration: true);
   }
 
   Future<void> _signInWithGoogle() => _run(() => _auth!.signInWithGoogle());
@@ -13206,7 +13347,15 @@ class _CloudAccountPageState extends State<CloudAccountPage> {
         FilledButton(
           key: Key(_isSignUp ? 'accountSignUpButton' : 'accountSignInButton'),
           onPressed: _busy ? null : (_isSignUp ? _signUp : _signIn),
-          child: Text(_isSignUp ? 'アカウントを作成' : 'ログイン'),
+          child: Text(
+            _isSignUp && _sendingRegistration
+                ? _text('送信中…', 'Sending…')
+                : _isSignUp && _registrationFailed
+                ? _text('再試行', 'Try again')
+                : _isSignUp
+                ? 'アカウントを作成'
+                : 'ログイン',
+          ),
         ),
         TextButton(
           key: const Key('accountAuthModeButton'),
@@ -13220,63 +13369,172 @@ class _CloudAccountPageState extends State<CloudAccountPage> {
     ),
   );
 
+  Widget _confirmation() => Semantics(
+    key: const Key('accountEmailConfirmation'),
+    liveRegion: true,
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Icon(
+          Icons.mark_email_read_outlined,
+          size: 64,
+          color: Theme.of(context).colorScheme.primary,
+        ),
+        const SizedBox(height: 24),
+        Text(
+          _text('確認メールを送信しました', 'Confirmation email sent'),
+          textAlign: TextAlign.center,
+          style: Theme.of(context).textTheme.headlineSmall,
+        ),
+        const SizedBox(height: 24),
+        Text(_text('送信先', 'Sent to')),
+        const SizedBox(height: 8),
+        SelectableText(
+          _confirmationEmail!,
+          key: const Key('accountConfirmationEmail'),
+          style: Theme.of(context).textTheme.titleMedium,
+        ),
+        const SizedBox(height: 24),
+        Text(
+          _text(
+            '1. 上記のメールアドレスの受信トレイを開いてください。\n'
+                '2. 確認メール内のリンクを押して、メールアドレスを認証してください。\n'
+                '3. 認証後、このアプリに戻ってログインしてください。',
+            '1. Open the inbox for the email address above.\n'
+                '2. Follow the link in the confirmation email to verify your email address.\n'
+                '3. Return to this app and log in after verification.',
+          ),
+        ),
+        const SizedBox(height: 16),
+        Text(
+          _text(
+            'メールが見つからない場合は、迷惑メールフォルダも確認してください。',
+            'If you cannot find the email, check your spam folder too.',
+          ),
+        ),
+        const SizedBox(height: 24),
+        FilledButton(
+          key: const Key('accountConfirmationLoginButton'),
+          onPressed: _returnToSignIn,
+          child: Text(_text('ログインへ戻る', 'Back to login')),
+        ),
+      ],
+    ),
+  );
+
   @override
   Widget build(BuildContext context) {
     final signedIn = _auth?.isSignedIn ?? false;
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(!signedIn && _isSignUp ? 'アカウントを作成' : 'アカウント'),
-      ),
-      body: ListView(
-        padding: const EdgeInsets.all(20),
-        children: [
-          if (_auth == null)
-            const Text('現在アカウント機能を利用できません')
-          else if (!signedIn) ...[
-            OutlinedButton(
-              key: const Key('accountGoogleSignInButton'),
-              onPressed: _busy ? null : _signInWithGoogle,
-              child: const Text('Googleで続ける'),
-            ),
-            const SizedBox(height: 20),
-            _emailForm(),
-          ] else ...[
-            const Text(
-              'ログイン中',
-              style: TextStyle(fontSize: 24, fontWeight: FontWeight.w900),
-            ),
-            const SizedBox(height: 8),
-            Text(_auth?.email ?? '', key: const Key('accountSignedInEmail')),
-            TextButton(
-              key: const Key('accountSignOutButton'),
-              onPressed: _busy ? null : _signOut,
-              child: const Text('ログアウト'),
-            ),
-            TextButton(
-              key: const Key('accountDeleteButton'),
-              onPressed: _busy ? null : _deleteAccount,
-              style: TextButton.styleFrom(
-                foregroundColor: Theme.of(context).colorScheme.error,
+    final confirmingEmail = !signedIn && _confirmationEmail != null;
+    final registration = !signedIn && (_isSignUp || confirmingEmail);
+    return PopScope(
+      canPop: !_busy && !registration,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop && !_busy && registration) _returnToSignIn();
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          leading: registration || Navigator.of(context).canPop()
+              ? IconButton(
+                  key: const Key('accountBackButton'),
+                  tooltip: MaterialLocalizations.of(context).backButtonTooltip,
+                  onPressed: _busy ? null : _back,
+                  icon: const BackButtonIcon(),
+                )
+              : null,
+          title: Text(
+            confirmingEmail
+                ? _text('メール認証', 'Verify email')
+                : registration
+                ? 'アカウントを作成'
+                : 'アカウント',
+          ),
+          actions: [
+            if (registration)
+              IconButton(
+                key: const Key('accountCloseButton'),
+                tooltip: _text('閉じる', 'Close'),
+                onPressed: _busy ? null : _close,
+                icon: const Icon(Icons.close_rounded),
               ),
-              child: const Text('アカウントを削除'),
-            ),
           ],
-          if (_busy && !_confirmingDeletion) ...[
-            const SizedBox(height: 16),
-            const Center(child: CircularProgressIndicator()),
+        ),
+        body: ListView(
+          controller: _scrollController,
+          padding: const EdgeInsets.all(20),
+          children: [
+            if (_auth == null)
+              const Text('現在アカウント機能を利用できません')
+            else if (confirmingEmail)
+              _confirmation()
+            else if (!signedIn) ...[
+              OutlinedButton(
+                key: const Key('accountGoogleSignInButton'),
+                onPressed: _busy ? null : _signInWithGoogle,
+                child: const Text('Googleで続ける'),
+              ),
+              const SizedBox(height: 20),
+              if (_registrationFailed) ...[
+                Semantics(
+                  key: const Key('accountRegistrationError'),
+                  liveRegion: true,
+                  child: Text(
+                    "${_text('アカウントを作成できませんでした', 'Account creation failed')}\n${_message ?? ''}",
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.error,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+              ],
+              _emailForm(),
+            ] else ...[
+              const Text(
+                'ログイン中',
+                style: TextStyle(fontSize: 24, fontWeight: FontWeight.w900),
+              ),
+              const SizedBox(height: 8),
+              Text(_auth?.email ?? '', key: const Key('accountSignedInEmail')),
+              TextButton(
+                key: const Key('accountSignOutButton'),
+                onPressed: _busy ? null : _signOut,
+                child: const Text('ログアウト'),
+              ),
+              TextButton(
+                key: const Key('accountDeleteButton'),
+                onPressed: _busy ? null : _deleteAccount,
+                style: TextButton.styleFrom(
+                  foregroundColor: Theme.of(context).colorScheme.error,
+                ),
+                child: const Text('アカウントを削除'),
+              ),
+            ],
+            if (_busy && !_confirmingDeletion) ...[
+              const SizedBox(height: 16),
+              const Center(child: CircularProgressIndicator()),
+            ],
+            if (_message != null && !_registrationFailed) ...[
+              const SizedBox(height: 16),
+              Semantics(
+                liveRegion: true,
+                child: Text(
+                  _message!,
+                  textAlign: TextAlign.center,
+                  style: _messageIsError
+                      ? TextStyle(color: Theme.of(context).colorScheme.error)
+                      : null,
+                ),
+              ),
+            ],
+            if (widget.showBackupSection && !confirmingEmail) ...[
+              const SizedBox(height: 24),
+              CloudBackupSection(
+                premium: SupabaseSyncService.canUseCloud,
+                onOpen: signedIn && !_busy ? _sync : null,
+              ),
+            ],
           ],
-          if (_message != null) ...[
-            const SizedBox(height: 16),
-            Text(_message!, textAlign: TextAlign.center),
-          ],
-          if (widget.showBackupSection) ...[
-            const SizedBox(height: 24),
-            CloudBackupSection(
-              premium: SupabaseSyncService.canUseCloud,
-              onOpen: signedIn && !_busy ? _sync : null,
-            ),
-          ],
-        ],
+        ),
       ),
     );
   }

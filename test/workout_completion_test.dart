@@ -19,7 +19,7 @@ String draft() => jsonEncode({
       'equipment': 'フリーウェイト',
       'sets': [
         {'weight': 65, 'reps': 8, 'completed': true},
-        {'weight': 60, 'reps': 5, 'completed': false},
+        {'weight': 60, 'reps': 5, 'completed': true},
       ],
     },
   ],
@@ -52,10 +52,12 @@ void main() {
           prefs.getString('workout_history'),
         );
         expect(history, hasLength(1));
-        expect(history.single.sets, hasLength(1));
-        expect(history.single.sets.single.weight, 65);
-        expect(history.single.sets.single.reps, 8);
-        expect(history.single.sets.single.exerciseId, 'bench_press');
+        expect(history.single.sets, hasLength(2));
+        expect(history.single.sets.last.weight, 60);
+        expect(history.single.sets.last.reps, 5);
+        expect(history.single.sets.first.weight, 65);
+        expect(history.single.sets.first.reps, 8);
+        expect(history.single.sets.first.exerciseId, 'bench_press');
         expect(history.single.date, DateTime(2026, 9, 20, 18, 30));
         expect(history.single.gymName, 'テストジム');
         expect(history.single.note, '保存確認');

@@ -98,7 +98,11 @@ void main() {
       addTearDown(t.view.resetPhysicalSize);
       addTearDown(t.view.resetDevicePixelRatio);
       Size? baseline;
-      for (var selected = 0; selected < 4; selected++) {
+      for (
+        var selected = 0;
+        selected < SetkeepNavigation.labels.length;
+        selected++
+      ) {
         await t.pumpWidget(
           MaterialApp(
             home: MediaQuery(

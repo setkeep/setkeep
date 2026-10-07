@@ -236,7 +236,7 @@ void main() {
         findsOneWidget,
       );
       await t.tap(find.text('マイページ'));
-      expect(selected, 3);
+      expect(selected, 4);
     },
   );
   testWidgets(

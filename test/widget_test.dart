@@ -3028,7 +3028,14 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('completeWorkoutButton')));
     await tester.pump();
-    expect(find.text('完了したセットを1つ以上チェックしてください'), findsOneWidget);
+    expect(
+      tester
+          .widget<OutlinedButton>(
+            find.byKey(const Key('completeWorkoutButton')),
+          )
+          .onPressed,
+      isNull,
+    );
 
     await tester.ensureVisible(find.byKey(const Key('addExerciseButton')));
     await tester.tap(find.byKey(const Key('addExerciseButton')));
@@ -3038,7 +3045,36 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('addSelectedExercises')));
     await tester.pumpAndSettle();
+    await tester.ensureVisible(find.byKey(const Key('addSetButton')));
+    await tester.tap(find.byKey(const Key('addSetButton')));
+    await tester.pumpAndSettle();
     await tester.tap(find.byIcon(Icons.circle_outlined).first);
+    await tester.pump();
+    expect(
+      tester
+          .widget<OutlinedButton>(
+            find.byKey(const Key('completeWorkoutButton')),
+          )
+          .onPressed,
+      isNull,
+    );
+    await tester.ensureVisible(find.text('すべて完了'));
+    await tester.tap(find.text('すべて完了'));
+    await tester.pump();
+    expect(
+      tester
+          .widget<OutlinedButton>(
+            find.byKey(const Key('completeWorkoutButton')),
+          )
+          .onPressed,
+      isNotNull,
+    );
+    await tester.drag(
+      find.byKey(const Key('workoutScrollView')),
+      const Offset(0, 1200),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('workoutElapsedLabel')), findsOneWidget);
     await tester.tap(find.byKey(const Key('completeWorkoutButton')));
     await tester.pumpAndSettle();
     expect(find.textContaining('自己ベスト更新'), findsOneWidget);
@@ -3713,7 +3749,8 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('チェストプレス'), findsOneWidget);
-    expect(find.text('55 kg × 8 回  /  2 セット'), findsOneWidget);
+    expect(find.text('50 kg × 10 回  /  1 セット'), findsOneWidget);
+    expect(find.text('55 kg × 8 回  /  1 セット'), findsOneWidget);
     expect(find.text('インクラインダンベルプレス（スローテンポ・ワイドグリップ）'), findsOneWidget);
     expect(find.text('総ボリューム'), findsNothing);
     expect(find.text('トレーニング時間'), findsNothing);
@@ -3737,7 +3774,7 @@ void main() {
     expect(longTitle.maxLines, 1);
     expect(longTitle.style?.fontSize, 16);
     expect(longTitle.style?.fontWeight, FontWeight.w900);
-    final recordLine = tester.widget<Text>(find.text('55 kg × 8 回  /  2 セット'));
+    final recordLine = tester.widget<Text>(find.text('55 kg × 8 回  /  1 セット'));
     expect(recordLine.style?.fontSize, 13);
     expect(recordLine.style?.fontWeight, FontWeight.w700);
     final date = tester.widget<Text>(find.text('2026.09.13'));
