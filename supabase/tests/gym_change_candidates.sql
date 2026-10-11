@@ -172,8 +172,8 @@ do $$ begin
 end $$;
 
 -- Rejecting a report removes its vote without deleting the Evidence audit row.
-update public.gym_equipment_reports set status='rejected', admin_note='QA不正確'
-where store_id='qa-candidate-store' and kind='added'
+select public.update_admin_report('equipment',id,status,'rejected','QA不正確')
+from public.gym_equipment_reports where store_id='qa-candidate-store' and kind='added'
   and user_id='00000000-0000-4000-9001-000000000003';
 reset role;
 do $$ declare old_id uuid; begin

@@ -1,7 +1,5 @@
 import 'dart:async';
 
-import 'package:url_launcher/url_launcher.dart';
-
 import 'gym_equipment_cache.dart';
 
 import 'package:flutter/material.dart';
@@ -600,18 +598,6 @@ class _GymStoreEquipmentPageState extends State<GymStoreEquipmentPage> {
     if (sent) await _load(force: true);
   }
 
-  Future<void> _openOfficial(String value) async {
-    final uri = Uri.tryParse(value);
-    if (uri == null || !['https', 'http'].contains(uri.scheme)) return;
-    try {
-      if (await launchUrl(uri, mode: LaunchMode.externalApplication)) return;
-    } catch (_) {}
-    if (mounted) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('公式ページを開けませんでした。')));
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final store = _detail?.store ?? widget.store;
@@ -631,12 +617,6 @@ class _GymStoreEquipmentPageState extends State<GymStoreEquipmentPage> {
     for (final e in equipment) {
       counts.update(e.displayCategory, (v) => v + 1, ifAbsent: () => 1);
     }
-    final checked = store.checkedAt?.toLocal();
-    final status = switch (store.equipmentStatus) {
-      'published' || 'complete' => '取得済み',
-      'partial' => '一部取得',
-      _ => equipment.isEmpty ? '未取得' : '一部取得',
-    };
     return Scaffold(
       appBar: AppBar(
         title: Text(store.displayName, maxLines: 2),
@@ -667,22 +647,6 @@ class _GymStoreEquipmentPageState extends State<GymStoreEquipmentPage> {
               ),
               if (store.isPreopening)
                 const Text('この店舗はオープン準備中です。現在の利用場所には登録できません。'),
-              Text('設備情報：$status', key: const Key('gymEquipmentStatus')),
-              Text(
-                checked == null
-                    ? '最終確認日：未確認'
-                    : '最終確認日：${checked.year}/${checked.month}/${checked.day}',
-              ),
-              if (checked != null &&
-                  DateTime.now().difference(checked).inDays >= 90)
-                const Text('設備情報が古い可能性があります'),
-              if (store.officialUrl != null)
-                TextButton.icon(
-                  key: const Key('gymOfficialPage'),
-                  onPressed: () => _openOfficial(store.officialUrl!),
-                  icon: const Icon(Icons.open_in_new),
-                  label: const Text('公式店舗ページ'),
-                ),
               if (widget.onSelect != null)
                 FilledButton(
                   key: const Key('confirmGymStoreSelection'),
@@ -722,10 +686,12 @@ class _GymStoreEquipmentPageState extends State<GymStoreEquipmentPage> {
               if (_failed && _detail == null)
                 gymError(() => _load(force: true)),
               if (!_busy && !_failed && equipment.isEmpty)
-                const Padding(
+                Padding(
                   padding: EdgeInsets.all(16),
                   child: Text(
-                    'この店舗の設備情報は未取得、または一部しか取得できていない可能性があります。通常の種目追加をご利用ください。',
+                    store.communityEquipmentOnly
+                        ? '設備募集中です。この店舗を選んでトレーニングを記録すると、使用設備を確認できます。利用者の確認が集まると設備一覧に反映します。「設備情報を報告」からの登録もできます。'
+                        : 'この店舗の設備情報は未取得、または一部しか取得できていない可能性があります。通常の種目追加をご利用ください。',
                   ),
                 ),
               if (equipment.isNotEmpty && visible.isEmpty)
@@ -1053,12 +1019,14 @@ class _ReportDialogState extends State<_ReportDialog> {
   final _quantity = TextEditingController(),
       _unavailableQuantity = TextEditingController();
   String _unavailableScope = 'all';
+  bool _onSiteConfirmed = false;
+  String? _selectedEquipment;
   bool _busy = false;
   String? _error;
   static const _kinds = {
     'not_present': '設置されていない',
     'removed': '撤去された',
-    'added': '新しく追加された',
+    'added': '現地で確認した設備を登録',
     'quantity_changed': '台数が違う',
     'temporarily_unavailable': '現在利用できない',
     'available_again': '利用可能に戻った',
@@ -1078,6 +1046,12 @@ class _ReportDialogState extends State<_ReportDialog> {
     if (_busy) return;
     if (_kind == 'added' && _name.text.trim().isEmpty) {
       setState(() => _error = '追加された設備名を入力してください');
+      return;
+    }
+    if (_kind == 'added' &&
+        widget.store.communityEquipmentOnly &&
+        !_onSiteConfirmed) {
+      setState(() => _error = '店舗で実際に確認した設備のみ登録できます');
       return;
     }
     final quantity = int.tryParse(_quantity.text.trim());
@@ -1105,7 +1079,9 @@ class _ReportDialogState extends State<_ReportDialog> {
         equipmentId: _kind == 'added' ? null : widget.equipment?.id,
         kind: _kind,
         equipmentName: _name.text.trim().isEmpty ? null : _name.text.trim(),
-        comment: _comment.text,
+        comment: _kind == 'added' && widget.store.communityEquipmentOnly
+            ? '[現地確認]${_comment.text}'
+            : _comment.text,
         reportedQuantity: _kind == 'quantity_changed' ? quantity : null,
         unavailableScope: _kind == 'temporarily_unavailable'
             ? _unavailableScope
@@ -1158,6 +1134,47 @@ class _ReportDialogState extends State<_ReportDialog> {
               ],
               onChanged: _busy ? null : (v) => setState(() => _kind = v!),
             ),
+            if (_kind == 'added') ...[
+              DropdownButtonFormField<String>(
+                key: const Key('gymReportEquipmentChoice'),
+                initialValue: _selectedEquipment,
+                isExpanded: true,
+                decoration: const InputDecoration(labelText: '設備を選択'),
+                items: [
+                  for (final name in const [
+                    'チェストプレス',
+                    'ラットプルダウン',
+                    'レッグプレス',
+                    'レッグカール',
+                    'レッグエクステンション',
+                    'スミスマシン',
+                    'パワーラック',
+                    'ダンベル',
+                    'ベンチ',
+                    'トレッドミル',
+                    'その他',
+                  ])
+                    DropdownMenuItem(value: name, child: Text(name)),
+                ],
+                onChanged: _busy
+                    ? null
+                    : (value) => setState(() {
+                        _selectedEquipment = value;
+                        _name.text = value == 'その他' ? '' : value ?? '';
+                      }),
+              ),
+              if (widget.store.communityEquipmentOnly)
+                CheckboxListTile(
+                  key: const Key('gymReportOnSiteConfirmed'),
+                  value: _onSiteConfirmed,
+                  title: const Text('この店舗で実際に設備を確認しました'),
+                  contentPadding: EdgeInsets.zero,
+                  onChanged: _busy
+                      ? null
+                      : (value) =>
+                            setState(() => _onSiteConfirmed = value == true),
+                ),
+            ],
             if (_kind == 'added' || _kind == 'wrong_name')
               TextField(
                 key: const Key('gymReportEquipmentName'),

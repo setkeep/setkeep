@@ -56,7 +56,7 @@ insert into auth.users(id) values ('00000000-0000-4000-8000-000000000009');
 insert into public.app_admins(user_id) values ('00000000-0000-4000-8000-000000000009');
 set local request.jwt.claim.sub='00000000-0000-4000-8000-000000000009';
 set local role authenticated;
-update public.gym_equipment_reports set status='rejected',admin_note='QA確認済み' where store_id='qa-exact';
+select public.update_admin_report('equipment',id,status,'rejected','QA確認済み') from public.gym_equipment_reports where store_id='qa-exact';
 set local request.jwt.claim.sub='00000000-0000-4000-8000-000000000008';
 set local role authenticated;
 insert into public.gym_equipment_reports(store_id,equipment_id,kind,comment) values ('qa-exact','qa-rack','other','確認してください');

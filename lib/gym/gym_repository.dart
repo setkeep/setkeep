@@ -23,6 +23,9 @@ class GymStore {
   });
   final String id, chainName, name, equipmentStatus;
   final String? city, address, station, chainId, officialUrl, pageStatus;
+  bool get communityEquipmentOnly =>
+      const {'anytime-fitness', 'fastgym24', 'golds-gym'}.contains(chainId) ||
+      id == 'auns-gym:aunsgym_jp_d4f6b4929a2a';
   final DateTime? checkedAt;
   final bool active;
   final String? operationalStatus;
@@ -96,10 +99,12 @@ class GymEquipment {
     this.checkedAt,
     this.exerciseIds = const {},
     this.compositeRuleIds = const {},
+    this.sourceKind,
+    this.sourceUrl,
   });
   final String id, name, category;
   final int? quantity;
-  final String? manufacturer, model, rawName, loadType;
+  final String? manufacturer, model, rawName, loadType, sourceKind, sourceUrl;
   final List<String> aliases;
   final bool available;
   final int? unavailableQuantity;
@@ -133,6 +138,8 @@ class GymEquipment {
   factory GymEquipment.fromJson(Map<String, dynamic> row) {
     final e = Map<String, dynamic>.from(row['equipment'] as Map);
     return GymEquipment(
+      sourceKind: row['source_kind'] as String?,
+      sourceUrl: row['source_url'] as String?,
       id: e['id'] as String,
       name: e['display_name'] as String? ?? e['name'] as String,
       rawName: row['raw_name'] as String? ?? e['name'] as String?,
@@ -157,6 +164,8 @@ class GymEquipment {
   }
   Map<String, dynamic> toJson() => {
     'quantity': quantity,
+    'source_kind': sourceKind,
+    'source_url': sourceUrl,
     'raw_name': rawName,
     'available': available,
     'unavailable_quantity': unavailableQuantity,
@@ -733,17 +742,42 @@ class GymStoreDetail {
   Set<String> get exerciseIds => evidence.map((e) => e.exerciseId).toSet();
   List<GymExerciseEvidence> forEquipment(String id) =>
       evidence.where((e) => e.equipmentIds.contains(id)).toList();
-  factory GymStoreDetail.fromJson(Map<String, dynamic> j) => GymStoreDetail(
-    store: GymStore.fromJson(Map<String, dynamic>.from(j['store'] as Map)),
-    equipment: [
-      for (final e in j['equipment'] as List)
-        GymEquipment.fromJson(Map<String, dynamic>.from(e as Map)),
-    ],
-    evidence: [
+  factory GymStoreDetail.fromJson(Map<String, dynamic> j) {
+    final store = GymStore.fromJson(
+      Map<String, dynamic>.from(j['store'] as Map),
+    );
+    final equipment =
+        [
+          for (final e in j['equipment'] as List)
+            GymEquipment.fromJson(Map<String, dynamic>.from(e as Map)),
+        ].where((e) {
+          if (!store.communityEquipmentOnly) return true;
+          if (store.chainId == 'auns-gym') {
+            return e.sourceUrl?.startsWith('https://beauty.hotpepper.jp/') !=
+                    true &&
+                !const {
+                  'auns-gym:fp_eq_758e41c26277',
+                  'auns-gym:fp_eq_a08d82bc89a9',
+                  'auns-gym:fp_eq_0a13c23b47c0',
+                  'auns-gym:fp_eq_72c38ceaa2bb',
+                  'auns-gym:fp_eq_986d089885b3',
+                  'auns-gym:fp_eq_93cafce3bb2c',
+                  'auns-gym:fp_eq_09d623796663',
+                }.contains(e.id);
+          }
+          return const {'admin', 'confirmed_report'}.contains(e.sourceKind);
+        }).toList();
+    final ids = equipment.map((e) => e.id).toSet();
+    final evidence = [
       for (final e in j['evidence'] as List)
         GymExerciseEvidence.fromJson(Map<String, dynamic>.from(e as Map)),
-    ],
-  );
+    ].where((e) => e.equipmentIds.every(ids.contains)).toList();
+    return GymStoreDetail(
+      store: store,
+      equipment: equipment,
+      evidence: evidence,
+    );
+  }
   Map<String, dynamic> toJson() => {
     'store': store.toJson(),
     'equipment': equipment.map((e) => e.toJson()).toList(),

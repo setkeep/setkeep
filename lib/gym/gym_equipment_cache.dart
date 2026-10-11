@@ -14,7 +14,7 @@ class CachedGymDetail {
 
 /// Public reference data only. Reports and registrations must never enter this cache.
 class GymEquipmentCache {
-  static String _key(String id) => 'gym_equipment_v1_$id';
+  static String _key(String id) => 'gym_equipment_v2_$id';
   static Future<CachedGymDetail?> read(String id) async {
     try {
       final value = (await SharedPreferences.getInstance()).getString(_key(id));

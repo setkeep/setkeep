@@ -267,16 +267,14 @@ void main() {
   ) async {
     await open(t, workout);
     expect(find.text('今回使用した設備を確認'), findsOneWidget);
-    expect(t.widget<ChoiceChip>(find.byType(ChoiceChip)).selected, false);
+    expect(t.widget<ChoiceChip>(find.byType(ChoiceChip)).selected, true);
     await t.tap(find.text('スキップ'));
     await t.pumpAndSettle();
     final prefs = await SharedPreferences.getInstance();
     expect(prefs.getString(TrainingEquipmentJournal.storageKey), isNull);
     expect(repo.sent, isEmpty);
     await open(t, workout);
-    await t.tap(find.text('スミスマシン'));
-    await t.pump();
-    await t.tap(find.text('確認して完了'));
+    await t.tap(find.text('この内容で送信'));
     await t.pumpAndSettle();
     final rows = jsonDecode(
       prefs.getString(TrainingEquipmentJournal.storageKey)!,
@@ -299,7 +297,7 @@ void main() {
       await t.pump();
       await t.tap(find.text('その他 / 判定しない'));
       await t.pump();
-      await t.tap(find.text('確認して完了'));
+      await t.tap(find.text('この内容で送信'));
       await t.pumpAndSettle();
       expect(
         (await SharedPreferences.getInstance()).getString(
@@ -314,7 +312,7 @@ void main() {
         t.widget<ChoiceChip>(find.widgetWithText(ChoiceChip, '設備B')).selected,
         true,
       );
-      await t.tap(find.text('確認して完了'));
+      await t.tap(find.text('この内容で送信'));
       await t.pumpAndSettle();
       final rows = jsonDecode(
         (await SharedPreferences.getInstance()).getString(
@@ -367,9 +365,7 @@ void main() {
         if (dismiss == 'back') {
           await t.binding.handlePopRoute();
         } else if (dismiss == 'confirm') {
-          await t.tap(find.widgetWithText(ChoiceChip, 'スミスマシン'));
-          await t.pumpAndSettle();
-          await t.tap(find.text('確認して完了'));
+          await t.tap(find.text('この内容で送信'));
         } else {
           await t.tap(find.text('スキップ'));
         }

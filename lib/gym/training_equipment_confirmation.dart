@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../config/supabase_config.dart';
+import '../exercise_list_thumbnail.dart';
 
 /// Created only from saved history, never a draft or a planned trainer menu.
 class EquipmentWorkout {
@@ -161,7 +162,24 @@ class TrainingEquipmentJournal {
   }
 }
 
+final _equipmentPromptsInFlight = <String>{};
+
 Future<void> confirmWorkoutEquipment(
+  BuildContext context,
+  EquipmentWorkout workout,
+) async {
+  final user = TrainingEquipmentServices.repository.userId;
+  if (!workout.eligible || user == null) return;
+  final key = '$user|${workout.storeId}|${workout.key}';
+  if (!_equipmentPromptsInFlight.add(key)) return;
+  try {
+    await _confirmWorkoutEquipment(context, workout);
+  } finally {
+    _equipmentPromptsInFlight.remove(key);
+  }
+}
+
+Future<void> _confirmWorkoutEquipment(
   BuildContext context,
   EquipmentWorkout workout,
 ) async {
@@ -221,6 +239,31 @@ class TrainingEquipmentSheet extends StatefulWidget {
 
 class _TrainingEquipmentSheetState extends State<TrainingEquipmentSheet> {
   final selected = <String, Map<String, dynamic>>{};
+  String choiceKey(String exercise, Map<String, dynamic> option) =>
+      '$exercise|${option['equipment_id']}';
+  @override
+  void initState() {
+    super.initState();
+    for (final prompt in widget.prompts) {
+      final options = List<Map<String, dynamic>>.from(
+        prompt['options'] as List,
+      );
+      if (options.length != 1 || options.single['known'] == true) continue;
+      final option = options.single;
+      final label = option['label'] as String;
+      // Reviewed workout options only. Free weights/bodyweight never imply a machine.
+      if (!RegExp(r'マシン|ケーブル|スミス|レッグプレス|ラットプル|ペック|バタフライ|トレッドミル|エルゴ')
+          .hasMatch(label)) {
+        continue;
+      }
+      final exercise = prompt['exercise_id'] as String;
+      selected[choiceKey(exercise, option)] = {
+        ...option,
+        'exercise_id': exercise,
+      };
+    }
+  }
+
   @override
   Widget build(BuildContext context) => FractionallySizedBox(
     heightFactor: .7,
@@ -234,7 +277,8 @@ class _TrainingEquipmentSheetState extends State<TrainingEquipmentSheet> {
                 '今回使用した設備を確認',
                 style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
               ),
-              Text('トレーニングは保存済みです。使った設備だけ選択してください。スキップできます。'),
+              Text('この店舗のマシン情報を集めています。今回使った候補に間違いがあれば解除してください。スキップできます。'),
+              Text('画像は共通の種目イメージです。店舗の設備写真ではありません。'),
             ],
           ),
         ),
@@ -250,9 +294,21 @@ class _TrainingEquipmentSheetState extends State<TrainingEquipmentSheet> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        widget.workout.exercises[prompt['exercise_id']]!,
-                        style: const TextStyle(fontWeight: FontWeight.bold),
+                      Row(
+                        children: [
+                          ExerciseListThumbnail(
+                            exerciseId: prompt['exercise_id'] as String,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              widget.workout.exercises[prompt['exercise_id']]!,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                       Wrap(
                         spacing: 8,
@@ -262,22 +318,39 @@ class _TrainingEquipmentSheetState extends State<TrainingEquipmentSheet> {
                               label: Text(
                                 '${raw['label']}${raw['known'] == true ? '（確認済み）' : ''}',
                               ),
-                              selected:
-                                  selected[prompt['exercise_id']]?['equipment_id'] ==
-                                  raw['equipment_id'],
+                              selected: selected.containsKey(
+                                choiceKey(
+                                  prompt['exercise_id'] as String,
+                                  Map<String, dynamic>.from(raw),
+                                ),
+                              ),
                               onSelected: (value) => setState(() {
                                 if (value) {
-                                  selected[prompt['exercise_id'] as String] =
-                                      Map<String, dynamic>.from(raw);
+                                  selected[choiceKey(
+                                    prompt['exercise_id'] as String,
+                                    Map<String, dynamic>.from(raw),
+                                  )] = {
+                                    ...Map<String, dynamic>.from(raw),
+                                    'exercise_id': prompt['exercise_id'],
+                                  };
                                 } else {
-                                  selected.remove(prompt['exercise_id']);
+                                  selected.remove(
+                                    choiceKey(
+                                      prompt['exercise_id'] as String,
+                                      Map<String, dynamic>.from(raw),
+                                    ),
+                                  );
                                 }
                               }),
                             ),
                           ActionChip(
                             label: const Text('その他 / 判定しない'),
                             onPressed: () => setState(
-                              () => selected.remove(prompt['exercise_id']),
+                              () => selected.removeWhere(
+                                (key, value) =>
+                                    value['exercise_id'] ==
+                                    prompt['exercise_id'],
+                              ),
                             ),
                           ),
                         ],
@@ -305,11 +378,11 @@ class _TrainingEquipmentSheetState extends State<TrainingEquipmentSheet> {
                       for (final entry in selected.entries)
                         if (entry.value['known'] != true)
                           {
-                            'exercise_id': entry.key,
+                            'exercise_id': entry.value['exercise_id'],
                             'equipment_id': entry.value['equipment_id'],
                           },
                     ]),
-                    child: const Text('確認して完了'),
+                    child: const Text('この内容で送信'),
                   ),
                 ),
               ],

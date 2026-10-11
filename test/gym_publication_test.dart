@@ -81,7 +81,8 @@ void main() {
         );
         await t.pumpAndSettle();
         expect(find.text('対応 1種目'), findsOneWidget);
-        expect(find.text('最終確認日：2026/1/2'), findsOneWidget);
+        expect(find.text('最終確認日：2026/1/2'), findsNothing);
+        expect(find.byKey(const Key('gymOfficialPage')), findsNothing);
         expect(find.byKey(const Key('reportNewGymEquipment')), findsOneWidget);
         final tile = find.byKey(const Key('gymEquipmentpublication-machine'));
         await t.scrollUntilVisible(

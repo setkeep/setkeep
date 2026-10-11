@@ -13,8 +13,8 @@ do $$ begin
  begin perform public.list_admin_reports('exercise');raise exception 'User used admin API';exception when insufficient_privilege then null;end;
  update public.gym_exercise_reports set status='reviewing' where store_id='qa-admin-store';
  if found then raise exception 'User updated exercise report';end if;
- update public.gym_equipment_reports set status='reviewing' where store_id='qa-admin-store';
- if found then raise exception 'User updated equipment report';end if;
+ begin update public.gym_equipment_reports set status='reviewing' where store_id='qa-admin-store';
+ raise exception 'Direct equipment review allowed';exception when insufficient_privilege then null;end;
 end $$;
 set local request.jwt.claim.sub='00000000-0000-4000-9000-000000000002';
 do $$ begin

@@ -221,7 +221,7 @@ void main() {
         (await GymEquipmentCache.load(repo, detailedStore)).exerciseIds.length,
         3,
       );
-      await p.setString('gym_equipment_v1_detail', 'broken');
+      await p.setString('gym_equipment_v2_detail', 'broken');
       expect(await GymEquipmentCache.read('detail'), isNull);
       await expectLater(
         GymEquipmentCache.load(repo, detailedStore),
@@ -261,9 +261,10 @@ void main() {
     'store detail metadata search aliases unknown quantity and refresh',
     (t) async {
       await open(t, GymStoreEquipmentPage(store: detailedStore));
-      expect(find.text('設備情報：一部取得'), findsOneWidget);
-      expect(find.text('最終確認日：2025/1/1'), findsOneWidget);
-      expect(find.text('設備情報が古い可能性があります'), findsOneWidget);
+      expect(find.byKey(const Key('gymEquipmentStatus')), findsNothing);
+      expect(find.byKey(const Key('gymOfficialPage')), findsNothing);
+      expect(find.text('最終確認日：2025/1/1'), findsNothing);
+      expect(find.text('設備情報が古い可能性があります'), findsNothing);
       expect(find.text('対応 3種目'), findsOneWidget);
       expect(find.text('台数不明'), findsNothing);
       expect(find.text('確認済みメーカー'), findsNothing);
