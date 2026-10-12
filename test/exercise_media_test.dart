@@ -183,15 +183,15 @@ void main() {
       final media = ExerciseMediaCatalog.forExerciseId('smith_incline_press')!;
       expect(media.exerciseId, 'smith_incline_press');
       expect(media.provider, 'setkeep_original');
-      expect(media.providerAssetId, 'smith_incline_press_v10');
+      expect(media.providerAssetId, 'smith_incline_press_v11');
       expect(media.mediaType, 'video');
       expect(
         media.assetPath,
-        'assets/exercise_videos/smith_incline_press_v10.mp4',
+        'assets/exercise_videos/smith_incline_press_v11.mp4',
       );
       expect(
         media.thumbnailAssetPath,
-        'assets/exercise_thumbnails/smith_incline_press_v10.png',
+        'assets/exercise_thumbnails/smith_incline_press_v11.png',
       );
       expect(ExerciseMediaCatalog.entries, hasLength(111));
       expect(File(media.assetPath).lengthSync(), greaterThan(100000));
@@ -236,7 +236,7 @@ void main() {
       expect(
         ExerciseMediaCatalog.forExerciseId('smith_incline_press')
             ?.providerAssetId,
-        'smith_incline_press_v10',
+        'smith_incline_press_v11',
       );
       expect(ExerciseMediaCatalog.forExerciseId('smith_decline_press'), isNull);
     },

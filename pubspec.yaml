@@ -47,8 +47,8 @@ flutter:
     - assets/vital_thumbnails/
     - assets/exercise_videos/smith_bench_press_v1.mp4
     - assets/exercise_thumbnails/smith_bench_press_v1.png
-    - assets/exercise_videos/smith_incline_press_v10.mp4
-    - assets/exercise_thumbnails/smith_incline_press_v10.png
+    - assets/exercise_videos/smith_incline_press_v11.mp4
+    - assets/exercise_thumbnails/smith_incline_press_v11.png
     - assets/models/body_tab.glb
     - assets/category_muscles/
     - assets/sounds/rest_complete.wav

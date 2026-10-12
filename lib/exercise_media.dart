@@ -18,11 +18,11 @@ const Map<String, ExerciseMedia> _setkeepMedia = {
   'smith_incline_press': ExerciseMedia(
     exerciseId: 'smith_incline_press',
     provider: 'setkeep_original',
-    providerAssetId: 'smith_incline_press_v10',
+    providerAssetId: 'smith_incline_press_v11',
     mediaType: 'video',
-    assetPath: 'assets/exercise_videos/smith_incline_press_v10.mp4',
+    assetPath: 'assets/exercise_videos/smith_incline_press_v11.mp4',
     thumbnailAssetPath:
-        'assets/exercise_thumbnails/smith_incline_press_v10.png',
+        'assets/exercise_thumbnails/smith_incline_press_v11.png',
   ),
 };
 
