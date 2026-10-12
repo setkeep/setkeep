@@ -65,7 +65,16 @@ void main() {
       expect(media.thumbnailAssetPath, 'assets/vital_thumbnails/$vitalId.png');
     }
     for (final id in unmatched) {
-      expect(ExerciseMediaCatalog.forExerciseId(id), isNull);
+      // An unmatched Vital exercise can have an explicitly authored guide.
+      // Keep every other unmatched ID unavailable.
+      if (id == 'smith_incline_press' || id == 'smith_bench_press') {
+        expect(
+          ExerciseMediaCatalog.forExerciseId(id)?.provider,
+          'setkeep_original',
+        );
+      } else {
+        expect(ExerciseMediaCatalog.forExerciseId(id), isNull);
+      }
     }
     for (final id in ['dy_row', 'low_row', 'linear_row', 'high_row']) {
       final decision = review.singleWhere((entry) => entry['exerciseId'] == id);

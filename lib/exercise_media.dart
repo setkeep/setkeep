@@ -4,6 +4,28 @@ import 'exercise_form_catalog.dart';
 
 part 'vital_media_catalog.g.dart';
 
+// SETKEEP-authored guides stay separate from the purchased Vital manifest.
+const Map<String, ExerciseMedia> _setkeepMedia = {
+  'smith_bench_press': ExerciseMedia(
+    exerciseId: 'smith_bench_press',
+    provider: 'setkeep_original',
+    providerAssetId: 'smith_bench_press_v1',
+    mediaType: 'video',
+    assetPath: 'assets/exercise_videos/smith_bench_press_v1.mp4',
+    thumbnailAssetPath:
+        'assets/exercise_thumbnails/smith_bench_press_v1.png',
+  ),
+  'smith_incline_press': ExerciseMedia(
+    exerciseId: 'smith_incline_press',
+    provider: 'setkeep_original',
+    providerAssetId: 'smith_incline_press_v10',
+    mediaType: 'video',
+    assetPath: 'assets/exercise_videos/smith_incline_press_v10.mp4',
+    thumbnailAssetPath:
+        'assets/exercise_thumbnails/smith_incline_press_v10.png',
+  ),
+};
+
 /// Optional media is keyed by SETKEEP's stable exercise ID, never the provider ID.
 class ExerciseMedia {
   const ExerciseMedia({
@@ -29,11 +51,12 @@ class ExerciseMedia {
 
 class ExerciseMediaCatalog {
   static List<ExerciseMedia> get entries =>
-      List.unmodifiable(_vitalMedia.values);
+      List.unmodifiable({..._vitalMedia, ..._setkeepMedia}.values);
 
   static ExerciseMedia? forExerciseId(String? exerciseId) {
     if (exerciseId == null) return null;
-    final media = _vitalMedia[ExerciseFormCatalog.canonicalId(exerciseId)];
+    final canonicalId = ExerciseFormCatalog.canonicalId(exerciseId);
+    final media = _setkeepMedia[canonicalId] ?? _vitalMedia[canonicalId];
     return media?.isActive == true ? media : null;
   }
 

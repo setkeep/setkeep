@@ -83,3 +83,7 @@ android/key.properties
 !/assets/vital_videos/.gitkeep
 /assets/vital_thumbnails/*
 !/assets/vital_thumbnails/.gitkeep
+
+# Locally rendered SETKEEP form videos and thumbnails are staged with the app.
+/assets/exercise_videos/*.mp4
+/assets/exercise_thumbnails/*.png

@@ -143,7 +143,12 @@ void main() {
   };
 
   test('reviewed Vital IDs map to existing SETKEEP identities only', () async {
-    expect(ExerciseMediaCatalog.entries, hasLength(109));
+    expect(
+      ExerciseMediaCatalog.entries.where(
+        (media) => media.provider == 'vital_animations',
+      ),
+      hasLength(109),
+    );
     for (final entry in originalMappings.entries) {
       final media = ExerciseMediaCatalog.forExerciseId(entry.key)!;
       expect(media.exerciseId, entry.key);
@@ -171,6 +176,71 @@ void main() {
       expect(manifest.listAssets(), contains(benchMedia.thumbnailAssetPath));
     }
   });
+
+  test(
+    'approved SETKEEP Smith incline video is bundled for its own ID',
+    () async {
+      final media = ExerciseMediaCatalog.forExerciseId('smith_incline_press')!;
+      expect(media.exerciseId, 'smith_incline_press');
+      expect(media.provider, 'setkeep_original');
+      expect(media.providerAssetId, 'smith_incline_press_v10');
+      expect(media.mediaType, 'video');
+      expect(
+        media.assetPath,
+        'assets/exercise_videos/smith_incline_press_v10.mp4',
+      );
+      expect(
+        media.thumbnailAssetPath,
+        'assets/exercise_thumbnails/smith_incline_press_v10.png',
+      );
+      expect(ExerciseMediaCatalog.entries, hasLength(111));
+      expect(File(media.assetPath).lengthSync(), greaterThan(100000));
+      final manifest = await AssetManifest.loadFromAssetBundle(rootBundle);
+      expect(manifest.listAssets(), contains(media.assetPath));
+      expect(manifest.listAssets(), contains(media.thumbnailAssetPath));
+      expect(ExerciseMediaCatalog.forExerciseId('smith_decline_press'), isNull);
+      expect(
+        ExerciseMediaCatalog.forExerciseId('incline_barbell_press')
+            ?.providerAssetId,
+        '0043',
+      );
+    },
+  );
+
+  test(
+    'approved SETKEEP Smith flat video is bundled for its own ID',
+    () async {
+      final media = ExerciseMediaCatalog.forExerciseId('smith_bench_press')!;
+      expect(media.exerciseId, 'smith_bench_press');
+      expect(media.provider, 'setkeep_original');
+      expect(media.providerAssetId, 'smith_bench_press_v1');
+      expect(media.mediaType, 'video');
+      expect(
+        media.assetPath,
+        'assets/exercise_videos/smith_bench_press_v1.mp4',
+      );
+      expect(
+        media.thumbnailAssetPath,
+        'assets/exercise_thumbnails/smith_bench_press_v1.png',
+      );
+      expect(ExerciseMediaCatalog.entries, hasLength(111));
+      expect(File(media.assetPath).lengthSync(), greaterThan(100000));
+      final manifest = await AssetManifest.loadFromAssetBundle(rootBundle);
+      expect(manifest.listAssets(), contains(media.assetPath));
+      expect(manifest.listAssets(), contains(media.thumbnailAssetPath));
+      expect(await ExerciseMediaCatalog.isAvailable(media), isTrue);
+      expect(
+        ExerciseMediaCatalog.forExerciseId('bench_press')?.providerAssetId,
+        '0042',
+      );
+      expect(
+        ExerciseMediaCatalog.forExerciseId('smith_incline_press')
+            ?.providerAssetId,
+        'smith_incline_press_v10',
+      );
+      expect(ExerciseMediaCatalog.forExerciseId('smith_decline_press'), isNull);
+    },
+  );
 
   test('purchased source and staged videos match reviewed IDs', () {
     final manifest = jsonDecode(
