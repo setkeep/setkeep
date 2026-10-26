@@ -6,9 +6,10 @@ import 'exercise_media.dart';
 /// One fixed-size image slot for an exercise row. Only explicit thumbnails are
 /// shown; exercises without one use the existing SETKEEP mark.
 class ExerciseListThumbnail extends StatelessWidget {
-  const ExerciseListThumbnail({super.key, this.exerciseId});
+  const ExerciseListThumbnail({super.key, this.exerciseId, this.onTap});
 
   final String? exerciseId;
+  final VoidCallback? onTap;
 
   static const double size = 56;
 
@@ -18,23 +19,32 @@ class ExerciseListThumbnail extends StatelessWidget {
     final path = ExerciseMediaCatalog.forExerciseId(exerciseId)
         ?.thumbnailAssetPath;
     return Semantics(
-      label: path == null ? 'SETKEEPロゴの仮画像' : '種目画像',
-      image: true,
-      child: SizedBox.square(
-        key: const Key('exerciseListThumbnail'),
-        dimension: size,
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(8),
-          child: ColoredBox(
-            color: Theme.of(context).colorScheme.surfaceContainerLow,
-            child: path == null
-                ? _placeholder(prefix)
-                : Image.asset(
-                    '$prefix$path',
-                    fit: BoxFit.contain,
-                    errorBuilder: (_, error, stackTrace) =>
-                        _placeholder(prefix),
-                  ),
+      label: onTap != null
+          ? '種目のフォームガイドを開く'
+          : path == null
+          ? 'SETKEEPロゴの仮画像'
+          : '種目画像',
+      image: onTap == null,
+      button: onTap != null,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(8),
+        child: SizedBox.square(
+          key: const Key('exerciseListThumbnail'),
+          dimension: size,
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: ColoredBox(
+              color: Theme.of(context).colorScheme.surfaceContainerLow,
+              child: path == null
+                  ? _placeholder(prefix)
+                  : Image.asset(
+                      '$prefix$path',
+                      fit: BoxFit.contain,
+                      errorBuilder: (_, error, stackTrace) =>
+                          _placeholder(prefix),
+                    ),
+            ),
           ),
         ),
       ),

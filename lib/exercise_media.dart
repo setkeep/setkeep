@@ -12,8 +12,7 @@ const Map<String, ExerciseMedia> _setkeepMedia = {
     providerAssetId: 'smith_bench_press_v1',
     mediaType: 'video',
     assetPath: 'assets/exercise_videos/smith_bench_press_v1.mp4',
-    thumbnailAssetPath:
-        'assets/exercise_thumbnails/smith_bench_press_v1.png',
+    thumbnailAssetPath: 'assets/exercise_thumbnails/smith_bench_press_v1.png',
   ),
   'smith_incline_press': ExerciseMedia(
     exerciseId: 'smith_incline_press',
@@ -23,6 +22,49 @@ const Map<String, ExerciseMedia> _setkeepMedia = {
     assetPath: 'assets/exercise_videos/smith_incline_press_v11.mp4',
     thumbnailAssetPath:
         'assets/exercise_thumbnails/smith_incline_press_v11.png',
+  ),
+  'smith_squat': ExerciseMedia(
+    exerciseId: 'smith_squat',
+    provider: 'setkeep_original',
+    providerAssetId: 'smith_squat_wrist_v2_white',
+    mediaType: 'video',
+    assetPath: 'assets/exercise_videos/smith_squat_wrist_v2_white.mp4',
+    thumbnailAssetPath:
+        'assets/exercise_thumbnails/smith_squat_wrist_v2_white.png',
+  ),
+  'decline_barbell_press': ExerciseMedia(
+    exerciseId: 'decline_barbell_press',
+    provider: 'setkeep_original',
+    providerAssetId: 'decline_barbell_press_v1',
+    mediaType: 'video',
+    assetPath: 'assets/exercise_videos/decline_barbell_press_v1.mp4',
+    thumbnailAssetPath:
+        'assets/exercise_thumbnails/decline_barbell_press_v1.png',
+  ),
+  'split_squat': ExerciseMedia(
+    exerciseId: 'split_squat',
+    provider: 'setkeep_original',
+    providerAssetId: 'split_squat_v1',
+    mediaType: 'video',
+    assetPath: 'assets/exercise_videos/split_squat_v1.mp4',
+    thumbnailAssetPath: 'assets/exercise_thumbnails/split_squat_v1.png',
+  ),
+  'rear_raise': ExerciseMedia(
+    exerciseId: 'rear_raise',
+    provider: 'setkeep_original',
+    providerAssetId: 'rear_raise_v1',
+    mediaType: 'video',
+    assetPath: 'assets/exercise_videos/rear_raise_v1.mp4',
+    thumbnailAssetPath: 'assets/exercise_thumbnails/rear_raise_v1.png',
+  ),
+  'reverse_curl': ExerciseMedia(
+    exerciseId: 'reverse_curl',
+    provider: 'setkeep_original',
+    providerAssetId: 'reverse_curl_coordination_v2',
+    mediaType: 'video',
+    assetPath: 'assets/exercise_videos/reverse_curl_coordination_v2.mp4',
+    thumbnailAssetPath:
+        'assets/exercise_thumbnails/reverse_curl_coordination_v2.png',
   ),
 };
 
