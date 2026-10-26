@@ -143,7 +143,7 @@ void main() {
   };
 
   test('reviewed Vital IDs map to existing SETKEEP identities only', () async {
-    expect(ExerciseMediaCatalog.entries, hasLength(109));
+    expect(ExerciseMediaCatalog.entries, hasLength(115));
     for (final entry in originalMappings.entries) {
       final media = ExerciseMediaCatalog.forExerciseId(entry.key)!;
       expect(media.exerciseId, entry.key);
