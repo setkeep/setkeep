@@ -164,9 +164,32 @@ void main() {
         scrollable: exercisePickerScrollable(),
       );
       await tester.pumpAndSettle();
+      expect(
+        tester
+            .widget<BodyPartCategoryCard>(
+              find.ancestor(
+                of: legs,
+                matching: find.byType(BodyPartCategoryCard),
+              ),
+            )
+            .category,
+        '脚',
+        reason: 'The stored category key must remain unchanged',
+      );
+      expect(
+        tester
+            .widget<BodyPartCategoryCard>(
+              find.ancestor(
+                of: legs,
+                matching: find.byType(BodyPartCategoryCard),
+              ),
+            )
+            .label,
+        '下半身',
+      );
       await tester.tap(legs);
       await tester.pumpAndSettle();
-      expect(find.text('脚の種目'), findsOneWidget);
+      expect(find.text('下半身の種目'), findsOneWidget);
       expect(find.byKey(const Key('exerciseSearchField')), findsOneWidget);
       expect(tester.takeException(), isNull);
     },

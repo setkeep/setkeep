@@ -255,6 +255,66 @@ void main() {
     entitlement.dispose();
   });
 
+  testWidgets(
+    'failed early preload can retry at completion without a retry loop',
+    (tester) async {
+      final entitlement = AdsEntitlement();
+      final backend = _FakeBackend(_FakeAd())..fail = true;
+      final session = await _finish(entitlement, backend);
+      await tester.pump();
+      expect(backend.loads, 1);
+      backend.fail = false;
+      session!.preload();
+      await tester.pump();
+      expect(backend.loads, 2);
+      await session.tryShow();
+      expect(backend.ad.shows, 1);
+      session.dispose();
+      entitlement.dispose();
+    },
+  );
+
+  testWidgets('permission interruption reloads on resume before completion', (
+    tester,
+  ) async {
+    final entitlement = AdsEntitlement();
+    final backend = _FakeBackend(_FakeAd());
+    final session = await _finish(entitlement, backend);
+    await tester.pump();
+    expect(backend.loads, 1);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    expect(backend.ad.disposals, 1);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pump();
+    expect(backend.loads, 2);
+    await session!.tryShow();
+    expect(backend.ad.shows, 1);
+    session.dispose();
+    entitlement.dispose();
+  });
+
+  testWidgets('interrupted delayed load cannot replace resumed preload', (
+    tester,
+  ) async {
+    final entitlement = AdsEntitlement();
+    final backend = _FakeBackend(_FakeAd())..pending = true;
+    final session = await _finish(entitlement, backend);
+    final oldLoad = backend.loading!;
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+    backend.pending = false;
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pump();
+    final stale = _FakeAd();
+    oldLoad.complete(stale);
+    await tester.pump();
+    expect(stale.disposals, 1);
+    await session!.tryShow();
+    expect(stale.shows, 0);
+    expect(backend.ad.shows, 1);
+    session.dispose();
+    entitlement.dispose();
+  });
+
   testWidgets('adFree, unloaded, background and dispose remain safe', (
     tester,
   ) async {

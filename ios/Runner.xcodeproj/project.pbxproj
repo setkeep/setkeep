@@ -16,18 +16,18 @@
 		97C146FC1CF9000F007C117D /* Main.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FA1CF9000F007C117D /* Main.storyboard */; };
 		97C146FE1CF9000F007C117D /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FD1CF9000F007C117D /* Assets.xcassets */; };
 		97C147011CF9000F007C117D /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FF1CF9000F007C117D /* LaunchScreen.storyboard */; };
-AB0923000000000000000006 = {isa = PBXBuildFile; fileRef = AB0923000000000000000001; };
-AB0923000000000000000007 = {isa = PBXBuildFile; fileRef = AB0923000000000000000002; };
-AB0923000000000000000008 = {isa = PBXBuildFile; fileRef = AB0923000000000000000001; };
-AB0923000000000000000009 = {isa = PBXBuildFile; fileRef = AB0923000000000000000003; };
-AB092300000000000000000A = {isa = PBXBuildFile; fileRef = AB0923000000000000000005; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
-		AC1004000000000000000014 = { isa = PBXBuildFile; fileRef = AC100400000000000000000B; };
-		AC1004000000000000000015 = { isa = PBXBuildFile; fileRef = AC100400000000000000000C; };
-		AC1004000000000000000016 = { isa = PBXBuildFile; fileRef = AC1004000000000000000011; };
-		AC1004000000000000000017 = { isa = PBXBuildFile; fileRef = AC100400000000000000000E; };
-		AC1004000000000000000018 = { isa = PBXBuildFile; fileRef = AC1004000000000000000010; };
-		AC100400000000000000001A = { isa = PBXBuildFile; fileRef = AC1004000000000000000011; };
-		AC1004000000000000000019 = { isa = PBXBuildFile; fileRef = AC1004000000000000000001; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		AB0923000000000000000006 /* Runner/RestTimerAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB0923000000000000000001 /* Runner/RestTimerAttributes.swift */; };
+		AB0923000000000000000007 /* Runner/RestTimerDisplay.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB0923000000000000000002 /* Runner/RestTimerDisplay.swift */; };
+		AB0923000000000000000008 /* Runner/RestTimerAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB0923000000000000000001 /* Runner/RestTimerAttributes.swift */; };
+		AB0923000000000000000009 /* RestTimerWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB0923000000000000000003 /* RestTimerWidget.swift */; };
+		AB092300000000000000000A /* RestTimerWidget.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = AB0923000000000000000005 /* RestTimerWidget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		AC1004000000000000000014 /* SetkeepWatchApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC100400000000000000000B /* SetkeepWatchApp.swift */; };
+		AC1004000000000000000015 /* WatchSessionModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC100400000000000000000C /* WatchSessionModel.swift */; };
+		AC1004000000000000000016 /* ../WatchShared/RestWatchProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC1004000000000000000011 /* ../WatchShared/RestWatchProtocol.swift */; };
+		AC1004000000000000000017 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = AC100400000000000000000E /* Assets.xcassets */; };
+		AC1004000000000000000018 /* PhoneWatchBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC1004000000000000000010 /* PhoneWatchBridge.swift */; };
+		AC1004000000000000000019 /* SETKEEP Watch.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = AC1004000000000000000001 /* SETKEEP Watch.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		AC100400000000000000001A /* ../WatchShared/RestWatchProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC1004000000000000000011 /* ../WatchShared/RestWatchProtocol.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -38,8 +38,20 @@ AB092300000000000000000A = {isa = PBXBuildFile; fileRef = AB09230000000000000000
 			remoteGlobalIDString = 97C146ED1CF9000F007C117D;
 			remoteInfo = Runner;
 		};
-AB0923000000000000000015 = {isa = PBXContainerItemProxy; containerPortal = 97C146E61CF9000F007C117D; proxyType = 1; remoteGlobalIDString = AB092300000000000000000B; remoteInfo = RestTimerWidget; };
-		AC1004000000000000000009 = { isa = PBXContainerItemProxy; containerPortal = 97C146E61CF9000F007C117D; proxyType = 1; remoteGlobalIDString = AC1004000000000000000002; remoteInfo = SetkeepWatch; };
+		AB0923000000000000000015 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 97C146E61CF9000F007C117D /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = AB092300000000000000000B;
+			remoteInfo = RestTimerWidget;
+		};
+		AC1004000000000000000009 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 97C146E61CF9000F007C117D /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = AC1004000000000000000002;
+			remoteInfo = SetkeepWatch;
+		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -53,8 +65,28 @@ AB0923000000000000000015 = {isa = PBXContainerItemProxy; containerPortal = 97C14
 			name = "Embed Frameworks";
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-AB0923000000000000000014 = {isa = PBXCopyFilesBuildPhase; buildActionMask = 2147483647; dstPath = ""; dstSubfolderSpec = 13; files = (AB092300000000000000000A, ); name = "Embed App Extensions"; runOnlyForDeploymentPostprocessing = 0; };
-		AC1004000000000000000007 = { isa = PBXCopyFilesBuildPhase; buildActionMask = 2147483647; dstPath = "$(CONTENTS_FOLDER_PATH)/Watch"; dstSubfolderSpec = 16; files = (AC1004000000000000000019,); name = "Embed Watch Content"; runOnlyForDeploymentPostprocessing = 0; };
+		AB0923000000000000000014 /* Embed App Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				AB092300000000000000000A /* RestTimerWidget.appex in Embed App Extensions */,
+			);
+			name = "Embed App Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		AC1004000000000000000007 /* Embed Watch Content */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "$(CONTENTS_FOLDER_PATH)/Watch";
+			dstSubfolderSpec = 16;
+			files = (
+				AC1004000000000000000019 /* SETKEEP Watch.app in Embed Watch Content */,
+			);
+			name = "Embed Watch Content";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
@@ -75,19 +107,19 @@ AB0923000000000000000014 = {isa = PBXCopyFilesBuildPhase; buildActionMask = 2147
 		97C146FD1CF9000F007C117D /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		97C147001CF9000F007C117D /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/LaunchScreen.storyboard; sourceTree = "<group>"; };
 		97C147021CF9000F007C117D /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
-AB0923000000000000000001 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Runner/RestTimerAttributes.swift; sourceTree = SOURCE_ROOT; };
-AB0923000000000000000002 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Runner/RestTimerDisplay.swift; sourceTree = SOURCE_ROOT; };
-AB0923000000000000000003 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RestTimerWidget.swift; sourceTree = "<group>"; };
-AB0923000000000000000004 = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
-AB0923000000000000000005 = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; path = RestTimerWidget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
-AB0923000000000000000017 = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Flutter/Generated.xcconfig; sourceTree = SOURCE_ROOT; };
-		AC1004000000000000000001 = { isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "SETKEEP Watch.app"; sourceTree = BUILT_PRODUCTS_DIR; };
-		AC100400000000000000000B = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SetkeepWatchApp.swift; sourceTree = "<group>"; };
-		AC100400000000000000000C = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchSessionModel.swift; sourceTree = "<group>"; };
-		AC1004000000000000000010 = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhoneWatchBridge.swift; sourceTree = "<group>"; };
-		AC1004000000000000000011 = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../WatchShared/RestWatchProtocol.swift; sourceTree = "<group>"; };
-		AC100400000000000000000E = { isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
-		AC100400000000000000000F = { isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		AB0923000000000000000001 /* Runner/RestTimerAttributes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Runner/RestTimerAttributes.swift; sourceTree = SOURCE_ROOT; };
+		AB0923000000000000000002 /* Runner/RestTimerDisplay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Runner/RestTimerDisplay.swift; sourceTree = SOURCE_ROOT; };
+		AB0923000000000000000003 /* RestTimerWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RestTimerWidget.swift; sourceTree = "<group>"; };
+		AB0923000000000000000004 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		AB0923000000000000000005 /* RestTimerWidget.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; path = RestTimerWidget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		AB0923000000000000000017 /* Flutter/Generated.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Flutter/Generated.xcconfig; sourceTree = SOURCE_ROOT; };
+		AC1004000000000000000001 /* SETKEEP Watch.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "SETKEEP Watch.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		AC100400000000000000000B /* SetkeepWatchApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SetkeepWatchApp.swift; sourceTree = "<group>"; };
+		AC100400000000000000000C /* WatchSessionModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchSessionModel.swift; sourceTree = "<group>"; };
+		AC100400000000000000000E /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		AC100400000000000000000F /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		AC1004000000000000000010 /* PhoneWatchBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhoneWatchBridge.swift; sourceTree = "<group>"; };
+		AC1004000000000000000011 /* ../WatchShared/RestWatchProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../WatchShared/RestWatchProtocol.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -99,8 +131,20 @@ AB0923000000000000000017 = {isa = PBXFileReference; lastKnownFileType = text.xcc
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-AB092300000000000000000E = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
-		AC1004000000000000000005 = { isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+		AB092300000000000000000E /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		AC1004000000000000000005 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -127,21 +171,22 @@ AB092300000000000000000E = {isa = PBXFrameworksBuildPhase; buildActionMask = 214
 		97C146E51CF9000F007C117D = {
 			isa = PBXGroup;
 			children = (
-				AC100400000000000000000A,
-AB092300000000000000000C,
+				AC100400000000000000000A /* SetkeepWatch */,
+				AB092300000000000000000C /* RestTimerWidget */,
 				9740EEB11CF90186004384FC /* Flutter */,
 				97C146F01CF9000F007C117D /* Runner */,
 				97C146EF1CF9000F007C117D /* Products */,
 				331C8082294A63A400263BE5 /* RunnerTests */,
+				E23AA5F4307214F3005408FB /* Recovered References */,
 			);
 			sourceTree = "<group>";
 		};
 		97C146EF1CF9000F007C117D /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				AC1004000000000000000001,
+				AC1004000000000000000001 /* SETKEEP Watch.app */,
 				97C146EE1CF9000F007C117D /* Runner.app */,
-AB0923000000000000000005,
+				AB0923000000000000000005 /* RestTimerWidget.appex */,
 				331C8081294A63A400263BE5 /* RunnerTests.xctest */,
 			);
 			name = Products;
@@ -150,7 +195,7 @@ AB0923000000000000000005,
 		97C146F01CF9000F007C117D /* Runner */ = {
 			isa = PBXGroup;
 			children = (
-				AC1004000000000000000010,
+				AC1004000000000000000010 /* PhoneWatchBridge.swift */,
 				97C146FA1CF9000F007C117D /* Main.storyboard */,
 				97C146FD1CF9000F007C117D /* Assets.xcassets */,
 				97C146FF1CF9000F007C117D /* LaunchScreen.storyboard */,
@@ -164,8 +209,37 @@ AB0923000000000000000005,
 			path = Runner;
 			sourceTree = "<group>";
 		};
-AB092300000000000000000C = {isa = PBXGroup; children = (AB0923000000000000000001, AB0923000000000000000002, AB0923000000000000000003, AB0923000000000000000004, ); path = RestTimerWidget; sourceTree = "<group>"; };
-		AC100400000000000000000A = { isa = PBXGroup; children = (AC100400000000000000000B,AC100400000000000000000C,AC100400000000000000000E,AC100400000000000000000F,AC1004000000000000000011,); path = SetkeepWatch; sourceTree = "<group>"; };
+		AB092300000000000000000C /* RestTimerWidget */ = {
+			isa = PBXGroup;
+			children = (
+				AB0923000000000000000001 /* Runner/RestTimerAttributes.swift */,
+				AB0923000000000000000002 /* Runner/RestTimerDisplay.swift */,
+				AB0923000000000000000003 /* RestTimerWidget.swift */,
+				AB0923000000000000000004 /* Info.plist */,
+			);
+			path = RestTimerWidget;
+			sourceTree = "<group>";
+		};
+		AC100400000000000000000A /* SetkeepWatch */ = {
+			isa = PBXGroup;
+			children = (
+				AC100400000000000000000B /* SetkeepWatchApp.swift */,
+				AC100400000000000000000C /* WatchSessionModel.swift */,
+				AC100400000000000000000E /* Assets.xcassets */,
+				AC100400000000000000000F /* Info.plist */,
+				AC1004000000000000000011 /* ../WatchShared/RestWatchProtocol.swift */,
+			);
+			path = SetkeepWatch;
+			sourceTree = "<group>";
+		};
+		E23AA5F4307214F3005408FB /* Recovered References */ = {
+			isa = PBXGroup;
+			children = (
+				AB0923000000000000000017 /* Flutter/Generated.xcconfig */,
+			);
+			name = "Recovered References";
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -190,8 +264,8 @@ AB092300000000000000000C = {isa = PBXGroup; children = (AB0923000000000000000001
 			isa = PBXNativeTarget;
 			buildConfigurationList = 97C147051CF9000F007C117D /* Build configuration list for PBXNativeTarget "Runner" */;
 			buildPhases = (
-				AC1004000000000000000007,
-AB0923000000000000000014,
+				AC1004000000000000000007 /* Embed Watch Content */,
+				AB0923000000000000000014 /* Embed App Extensions */,
 				9740EEB61CF901F6004384FC /* Run Script */,
 				97C146EA1CF9000F007C117D /* Sources */,
 				97C146EB1CF9000F007C117D /* Frameworks */,
@@ -202,8 +276,8 @@ AB0923000000000000000014,
 			buildRules = (
 			);
 			dependencies = (
-				AC1004000000000000000008,
-AB0923000000000000000016,
+				AC1004000000000000000008 /* PBXTargetDependency */,
+				AB0923000000000000000016 /* PBXTargetDependency */,
 			);
 			name = Runner;
 			packageProductDependencies = (
@@ -213,8 +287,40 @@ AB0923000000000000000016,
 			productReference = 97C146EE1CF9000F007C117D /* Runner.app */;
 			productType = "com.apple.product-type.application";
 		};
-AB092300000000000000000B = {isa = PBXNativeTarget; buildConfigurationList = AB0923000000000000000010; buildPhases = (AB092300000000000000000D, AB092300000000000000000E, AB092300000000000000000F, ); buildRules = (); dependencies = (); name = RestTimerWidget; productName = RestTimerWidget; productReference = AB0923000000000000000005; productType = "com.apple.product-type.app-extension"; };
-		AC1004000000000000000002 = { isa = PBXNativeTarget; buildConfigurationList = AC1004000000000000000003; buildPhases = (AC1004000000000000000004,AC1004000000000000000005,AC1004000000000000000006,); buildRules = (); dependencies = (); name = SetkeepWatch; productName = "SETKEEP Watch"; productReference = AC1004000000000000000001; productType = "com.apple.product-type.application"; };
+		AB092300000000000000000B /* RestTimerWidget */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = AB0923000000000000000010 /* Build configuration list for PBXNativeTarget "RestTimerWidget" */;
+			buildPhases = (
+				AB092300000000000000000D /* Sources */,
+				AB092300000000000000000E /* Frameworks */,
+				AB092300000000000000000F /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = RestTimerWidget;
+			productName = RestTimerWidget;
+			productReference = AB0923000000000000000005 /* RestTimerWidget.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+		AC1004000000000000000002 /* SetkeepWatch */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = AC1004000000000000000003 /* Build configuration list for PBXNativeTarget "SetkeepWatch" */;
+			buildPhases = (
+				AC1004000000000000000004 /* Sources */,
+				AC1004000000000000000005 /* Frameworks */,
+				AC1004000000000000000006 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = SetkeepWatch;
+			productName = "SETKEEP Watch";
+			productReference = AC1004000000000000000001 /* SETKEEP Watch.app */;
+			productType = "com.apple.product-type.application";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -225,7 +331,6 @@ AB092300000000000000000B = {isa = PBXNativeTarget; buildConfigurationList = AB09
 				LastUpgradeCheck = 1510;
 				ORGANIZATIONNAME = "";
 				TargetAttributes = {
-					AC1004000000000000000002 = {CreatedOnToolsVersion = 27.0; DevelopmentTeam = 87WS98J5L6; };
 					331C8080294A63A400263BE5 = {
 						CreatedOnToolsVersion = 14.0;
 						TestTargetID = 97C146ED1CF9000F007C117D;
@@ -233,6 +338,9 @@ AB092300000000000000000B = {isa = PBXNativeTarget; buildConfigurationList = AB09
 					97C146ED1CF9000F007C117D = {
 						CreatedOnToolsVersion = 7.3.1;
 						LastSwiftMigration = 1100;
+					};
+					AC1004000000000000000002 = {
+						CreatedOnToolsVersion = 27.0;
 					};
 				};
 			};
@@ -252,8 +360,8 @@ AB092300000000000000000B = {isa = PBXNativeTarget; buildConfigurationList = AB09
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				AC1004000000000000000002,
-AB092300000000000000000B,
+				AC1004000000000000000002 /* SetkeepWatch */,
+				AB092300000000000000000B /* RestTimerWidget */,
 				97C146ED1CF9000F007C117D /* Runner */,
 				331C8080294A63A400263BE5 /* RunnerTests */,
 			);
@@ -279,8 +387,21 @@ AB092300000000000000000B,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-AB092300000000000000000F = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
-		AC1004000000000000000006 = { isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (AC1004000000000000000017,); runOnlyForDeploymentPostprocessing = 0; };
+		AB092300000000000000000F /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		AC1004000000000000000006 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				AC1004000000000000000017 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
@@ -330,18 +451,35 @@ AB092300000000000000000F = {isa = PBXResourcesBuildPhase; buildActionMask = 2147
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				AC1004000000000000000018,
-				AC100400000000000000001A,
+				AC1004000000000000000018 /* PhoneWatchBridge.swift in Sources */,
+				AC100400000000000000001A /* ../WatchShared/RestWatchProtocol.swift in Sources */,
 				74858FAF1ED2DC5600515810 /* AppDelegate.swift in Sources */,
-AB0923000000000000000006,
-AB0923000000000000000007,
+				AB0923000000000000000006 /* Runner/RestTimerAttributes.swift in Sources */,
+				AB0923000000000000000007 /* Runner/RestTimerDisplay.swift in Sources */,
 				1498D2341E8E89220040F4C2 /* GeneratedPluginRegistrant.m in Sources */,
 				7884E8682EC3CC0700C636F2 /* SceneDelegate.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-AB092300000000000000000D = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (AB0923000000000000000008, AB0923000000000000000009, ); runOnlyForDeploymentPostprocessing = 0; };
-		AC1004000000000000000004 = { isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (AC1004000000000000000014,AC1004000000000000000015,AC1004000000000000000016,); runOnlyForDeploymentPostprocessing = 0; };
+		AB092300000000000000000D /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				AB0923000000000000000008 /* Runner/RestTimerAttributes.swift in Sources */,
+				AB0923000000000000000009 /* RestTimerWidget.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		AC1004000000000000000004 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				AC1004000000000000000014 /* SetkeepWatchApp.swift in Sources */,
+				AC1004000000000000000015 /* WatchSessionModel.swift in Sources */,
+				AC1004000000000000000016 /* ../WatchShared/RestWatchProtocol.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -350,8 +488,16 @@ AB092300000000000000000D = {isa = PBXSourcesBuildPhase; buildActionMask = 214748
 			target = 97C146ED1CF9000F007C117D /* Runner */;
 			targetProxy = 331C8085294A63A400263BE5 /* PBXContainerItemProxy */;
 		};
-AB0923000000000000000016 = {isa = PBXTargetDependency; target = AB092300000000000000000B; targetProxy = AB0923000000000000000015; };
-		AC1004000000000000000008 = { isa = PBXTargetDependency; target = AC1004000000000000000002; targetProxy = AC1004000000000000000009; };
+		AB0923000000000000000016 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = AB092300000000000000000B /* RestTimerWidget */;
+			targetProxy = AB0923000000000000000015 /* PBXContainerItemProxy */;
+		};
+		AC1004000000000000000008 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = AC1004000000000000000002 /* SetkeepWatch */;
+			targetProxy = AC1004000000000000000009 /* PBXContainerItemProxy */;
+		};
 /* End PBXTargetDependency section */
 
 /* Begin PBXVariantGroup section */
@@ -434,7 +580,7 @@ AB0923000000000000000016 = {isa = PBXTargetDependency; target = AB09230000000000
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
 				CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)";
-				DEVELOPMENT_TEAM = 87WS98J5L6;
+				DEVELOPMENT_TEAM = 58CC3T56JQ;
 				ENABLE_BITCODE = NO;
 				INFOPLIST_FILE = Runner/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -455,6 +601,7 @@ AB0923000000000000000016 = {isa = PBXTargetDependency; target = AB09230000000000
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 58CC3T56JQ;
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.setkeep.app.RunnerTests;
@@ -472,6 +619,7 @@ AB0923000000000000000016 = {isa = PBXTargetDependency; target = AB09230000000000
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 58CC3T56JQ;
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.setkeep.app.RunnerTests;
@@ -487,6 +635,7 @@ AB0923000000000000000016 = {isa = PBXTargetDependency; target = AB09230000000000
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 58CC3T56JQ;
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.setkeep.app.RunnerTests;
@@ -616,7 +765,7 @@ AB0923000000000000000016 = {isa = PBXTargetDependency; target = AB09230000000000
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
 				CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)";
-				DEVELOPMENT_TEAM = 87WS98J5L6;
+				DEVELOPMENT_TEAM = 58CC3T56JQ;
 				ENABLE_BITCODE = NO;
 				INFOPLIST_FILE = Runner/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -639,7 +788,7 @@ AB0923000000000000000016 = {isa = PBXTargetDependency; target = AB09230000000000
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
 				CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)";
-				DEVELOPMENT_TEAM = 87WS98J5L6;
+				DEVELOPMENT_TEAM = 58CC3T56JQ;
 				ENABLE_BITCODE = NO;
 				INFOPLIST_FILE = Runner/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -654,39 +803,156 @@ AB0923000000000000000016 = {isa = PBXTargetDependency; target = AB09230000000000
 			};
 			name = Release;
 		};
-AB0923000000000000000011 = {isa = XCBuildConfiguration; baseConfigurationReference = AB0923000000000000000017; buildSettings = {
- APPLICATION_EXTENSION_API_ONLY = YES; CLANG_ENABLE_MODULES = YES; CODE_SIGN_STYLE = Automatic;
- DEVELOPMENT_TEAM = 87WS98J5L6; GENERATE_INFOPLIST_FILE = NO;
- INFOPLIST_FILE = RestTimerWidget/Info.plist; IPHONEOS_DEPLOYMENT_TARGET = 16.2;
- LD_RUNPATH_SEARCH_PATHS = ("$(inherited)", "@executable_path/Frameworks", "@executable_path/../../Frameworks", );
- CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)"; MARKETING_VERSION = "$(FLUTTER_BUILD_NAME)";
- PRODUCT_BUNDLE_IDENTIFIER = com.setkeep.app.RestTimerWidget;
- PRODUCT_NAME = "$(TARGET_NAME)"; SDKROOT = iphoneos; SKIP_INSTALL = YES; SWIFT_VERSION = 5.0;
- TARGETED_DEVICE_FAMILY = "1,2";
- }; name = Debug; };
-AB0923000000000000000012 = {isa = XCBuildConfiguration; baseConfigurationReference = AB0923000000000000000017; buildSettings = {
- APPLICATION_EXTENSION_API_ONLY = YES; CLANG_ENABLE_MODULES = YES; CODE_SIGN_STYLE = Automatic;
- DEVELOPMENT_TEAM = 87WS98J5L6; GENERATE_INFOPLIST_FILE = NO;
- INFOPLIST_FILE = RestTimerWidget/Info.plist; IPHONEOS_DEPLOYMENT_TARGET = 16.2;
- LD_RUNPATH_SEARCH_PATHS = ("$(inherited)", "@executable_path/Frameworks", "@executable_path/../../Frameworks", );
- CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)"; MARKETING_VERSION = "$(FLUTTER_BUILD_NAME)";
- PRODUCT_BUNDLE_IDENTIFIER = com.setkeep.app.RestTimerWidget;
- PRODUCT_NAME = "$(TARGET_NAME)"; SDKROOT = iphoneos; SKIP_INSTALL = YES; SWIFT_VERSION = 5.0;
- TARGETED_DEVICE_FAMILY = "1,2";
- }; name = Release; };
-AB0923000000000000000013 = {isa = XCBuildConfiguration; baseConfigurationReference = AB0923000000000000000017; buildSettings = {
- APPLICATION_EXTENSION_API_ONLY = YES; CLANG_ENABLE_MODULES = YES; CODE_SIGN_STYLE = Automatic;
- DEVELOPMENT_TEAM = 87WS98J5L6; GENERATE_INFOPLIST_FILE = NO;
- INFOPLIST_FILE = RestTimerWidget/Info.plist; IPHONEOS_DEPLOYMENT_TARGET = 16.2;
- LD_RUNPATH_SEARCH_PATHS = ("$(inherited)", "@executable_path/Frameworks", "@executable_path/../../Frameworks", );
- CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)"; MARKETING_VERSION = "$(FLUTTER_BUILD_NAME)";
- PRODUCT_BUNDLE_IDENTIFIER = com.setkeep.app.RestTimerWidget;
- PRODUCT_NAME = "$(TARGET_NAME)"; SDKROOT = iphoneos; SKIP_INSTALL = YES; SWIFT_VERSION = 5.0;
- TARGETED_DEVICE_FAMILY = "1,2";
- }; name = Profile; };
-		AC100400000000000000001E = { isa = XCBuildConfiguration; baseConfigurationReference = 9740EEB31CF90195004384FC; buildSettings = {ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon; CODE_SIGN_STYLE = Automatic; CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)"; DEVELOPMENT_TEAM = 87WS98J5L6; GENERATE_INFOPLIST_FILE = NO; INFOPLIST_FILE = SetkeepWatch/Info.plist; MARKETING_VERSION = "$(FLUTTER_BUILD_NAME)"; PRODUCT_BUNDLE_IDENTIFIER = com.setkeep.app.watchkitapp; PRODUCT_NAME = "SETKEEP Watch"; SDKROOT = watchos; SKIP_INSTALL = YES; SUPPORTED_PLATFORMS = "watchos watchsimulator"; SWIFT_VERSION = 5.0; TARGETED_DEVICE_FAMILY = 4; WATCHOS_DEPLOYMENT_TARGET = 10.0; SWIFT_OPTIMIZATION_LEVEL = "-Onone";}; name = Debug; };
-		AC100400000000000000001F = { isa = XCBuildConfiguration; baseConfigurationReference = 9740EEB31CF90195004384FC; buildSettings = {ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon; CODE_SIGN_STYLE = Automatic; CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)"; DEVELOPMENT_TEAM = 87WS98J5L6; GENERATE_INFOPLIST_FILE = NO; INFOPLIST_FILE = SetkeepWatch/Info.plist; MARKETING_VERSION = "$(FLUTTER_BUILD_NAME)"; PRODUCT_BUNDLE_IDENTIFIER = com.setkeep.app.watchkitapp; PRODUCT_NAME = "SETKEEP Watch"; SDKROOT = watchos; SKIP_INSTALL = YES; SUPPORTED_PLATFORMS = "watchos watchsimulator"; SWIFT_VERSION = 5.0; TARGETED_DEVICE_FAMILY = 4; WATCHOS_DEPLOYMENT_TARGET = 10.0; SWIFT_OPTIMIZATION_LEVEL = "-O";}; name = Release; };
-		AC1004000000000000000020 = { isa = XCBuildConfiguration; baseConfigurationReference = 9740EEB31CF90195004384FC; buildSettings = {ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon; CODE_SIGN_STYLE = Automatic; CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)"; DEVELOPMENT_TEAM = 87WS98J5L6; GENERATE_INFOPLIST_FILE = NO; INFOPLIST_FILE = SetkeepWatch/Info.plist; MARKETING_VERSION = "$(FLUTTER_BUILD_NAME)"; PRODUCT_BUNDLE_IDENTIFIER = com.setkeep.app.watchkitapp; PRODUCT_NAME = "SETKEEP Watch"; SDKROOT = watchos; SKIP_INSTALL = YES; SUPPORTED_PLATFORMS = "watchos watchsimulator"; SWIFT_VERSION = 5.0; TARGETED_DEVICE_FAMILY = 4; WATCHOS_DEPLOYMENT_TARGET = 10.0; SWIFT_OPTIMIZATION_LEVEL = "-O";}; name = Profile; };
+		AB0923000000000000000011 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = AB0923000000000000000017 /* Flutter/Generated.xcconfig */;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CLANG_ENABLE_MODULES = YES;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)";
+				DEVELOPMENT_TEAM = 58CC3T56JQ;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = RestTimerWidget/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.2;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = "$(FLUTTER_BUILD_NAME)";
+				PRODUCT_BUNDLE_IDENTIFIER = com.setkeep.app.RestTimerWidget;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		AB0923000000000000000012 /* Release */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = AB0923000000000000000017 /* Flutter/Generated.xcconfig */;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CLANG_ENABLE_MODULES = YES;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)";
+				DEVELOPMENT_TEAM = 58CC3T56JQ;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = RestTimerWidget/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.2;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = "$(FLUTTER_BUILD_NAME)";
+				PRODUCT_BUNDLE_IDENTIFIER = com.setkeep.app.RestTimerWidget;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		AB0923000000000000000013 /* Profile */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = AB0923000000000000000017 /* Flutter/Generated.xcconfig */;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CLANG_ENABLE_MODULES = YES;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)";
+				DEVELOPMENT_TEAM = 58CC3T56JQ;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = RestTimerWidget/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.2;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = "$(FLUTTER_BUILD_NAME)";
+				PRODUCT_BUNDLE_IDENTIFIER = com.setkeep.app.RestTimerWidget;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Profile;
+		};
+		AC100400000000000000001E /* Debug */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 9740EEB31CF90195004384FC /* Generated.xcconfig */;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)";
+				DEVELOPMENT_TEAM = 58CC3T56JQ;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = SetkeepWatch/Info.plist;
+				MARKETING_VERSION = "$(FLUTTER_BUILD_NAME)";
+				PRODUCT_BUNDLE_IDENTIFIER = com.setkeep.app.watchkitapp;
+				PRODUCT_NAME = "SETKEEP Watch";
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "watchos watchsimulator";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				WATCHOS_DEPLOYMENT_TARGET = 10.0;
+			};
+			name = Debug;
+		};
+		AC100400000000000000001F /* Release */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 9740EEB31CF90195004384FC /* Generated.xcconfig */;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)";
+				DEVELOPMENT_TEAM = 58CC3T56JQ;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = SetkeepWatch/Info.plist;
+				MARKETING_VERSION = "$(FLUTTER_BUILD_NAME)";
+				PRODUCT_BUNDLE_IDENTIFIER = com.setkeep.app.watchkitapp;
+				PRODUCT_NAME = "SETKEEP Watch";
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "watchos watchsimulator";
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				WATCHOS_DEPLOYMENT_TARGET = 10.0;
+			};
+			name = Release;
+		};
+		AC1004000000000000000020 /* Profile */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 9740EEB31CF90195004384FC /* Generated.xcconfig */;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)";
+				DEVELOPMENT_TEAM = 58CC3T56JQ;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = SetkeepWatch/Info.plist;
+				MARKETING_VERSION = "$(FLUTTER_BUILD_NAME)";
+				PRODUCT_BUNDLE_IDENTIFIER = com.setkeep.app.watchkitapp;
+				PRODUCT_NAME = "SETKEEP Watch";
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "watchos watchsimulator";
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				WATCHOS_DEPLOYMENT_TARGET = 10.0;
+			};
+			name = Profile;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -720,8 +986,26 @@ AB0923000000000000000013 = {isa = XCBuildConfiguration; baseConfigurationReferen
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-AB0923000000000000000010 = {isa = XCConfigurationList; buildConfigurations = (AB0923000000000000000011, AB0923000000000000000012, AB0923000000000000000013, ); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
-		AC1004000000000000000003 = { isa = XCConfigurationList; buildConfigurations = (AC100400000000000000001E,AC100400000000000000001F,AC1004000000000000000020,); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+		AB0923000000000000000010 /* Build configuration list for PBXNativeTarget "RestTimerWidget" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AB0923000000000000000011 /* Debug */,
+				AB0923000000000000000012 /* Release */,
+				AB0923000000000000000013 /* Profile */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		AC1004000000000000000003 /* Build configuration list for PBXNativeTarget "SetkeepWatch" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AC100400000000000000001E /* Debug */,
+				AC100400000000000000001F /* Release */,
+				AC1004000000000000000020 /* Profile */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 /* End XCConfigurationList section */
 
 /* Begin XCLocalSwiftPackageReference section */

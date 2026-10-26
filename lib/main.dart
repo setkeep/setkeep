@@ -58,6 +58,7 @@ import 'package:interactive_3d/interactive_3d.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:url_launcher/url_launcher.dart' as url_launcher;
 
 import 'config/supabase_config.dart';
 import 'body_part_illustration.dart';
@@ -69,6 +70,7 @@ import 'services/workout_draft_store.dart';
 import 'services/android_workout_draft.dart';
 import 'startup/startup_splash.dart';
 import 'legal/legal_text.dart';
+import 'inquiry/contact_message.dart';
 
 const activeWorkoutDraftStorageKey = AndroidWorkoutDraft.key;
 const appDisplayName = 'SETKEEP';
@@ -6309,21 +6311,39 @@ class _WorkoutPageState extends State<WorkoutPage> with WidgetsBindingObserver {
     super.dispose();
   }
 
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Give SDK initialization and the network the workout duration to preload.
+    // Display remains restricted to the successfully saved completion flow.
+    _prepareCompletionInterstitial();
+  }
+
   void _prepareCompletionInterstitial() {
-    if (widget.isEditing ||
-        _completionAd != null ||
-        _completionAdLoading != null) {
+    if (widget.isEditing) return;
+    if (_completionAd != null) {
+      _completionAd!.preload();
       return;
     }
     final ads = AdsScope.of(context);
     if (ads == null) return;
-    _completionAdLoading =
+    final platform = Theme.of(context).platform;
+    Future<WorkoutInterstitialSession?> prepare() =>
         WorkoutInterstitialSession.prepareForWorkoutCompletion(
           config: ads.config,
           entitlement: ads.entitlement,
-          platform: Theme.of(context).platform,
+          platform: platform,
           backend: ads.interstitialBackend,
-        );
+        ).catchError((Object _) => null);
+    final prepared = _completionAdLoading;
+    _completionAdLoading = prepared == null
+        ? prepare()
+        : prepared.then((session) {
+            // Recheck a previously ineligible day if a workout crosses midnight.
+            if (session == null) return prepare();
+            session.preload();
+            return session;
+          });
   }
 
   Future<void> _resolveCompletionInterstitial() async {
@@ -8957,7 +8977,7 @@ class _ExercisePickerSheetState extends State<ExercisePickerSheet> {
 
   final Map<String, ExerciseSelection> _selected = {};
   final List<String> _order = [];
-  String _categoryLabel(String category) => category == '腹' ? '腹筋' : category;
+  String _categoryLabel(String category) => bodyPartCategoryLabel(category);
   List<ExerciseTemplate> get _catalog => <String, ExerciseTemplate>{
     for (final item in exerciseTemplates) item.identity: item,
     // A formerly custom exercise keeps its saved recording settings when a
@@ -13655,6 +13675,7 @@ class ContactPage extends StatefulWidget {
 }
 
 class _ContactPageState extends State<ContactPage> {
+  final _caseId = createContactCaseId();
   final _formKey = GlobalKey<FormState>();
   final _subjectController = TextEditingController();
   final _messageController = TextEditingController();
@@ -13678,27 +13699,38 @@ class _ContactPageState extends State<ContactPage> {
     if (image != null && mounted) setState(() => _attachment = image);
   }
 
-  Future<void> _send() async {
+  Future<void> _send({bool useShareSheet = false}) async {
     if (!_formKey.currentState!.validate() || _sending) return;
     setState(() => _sending = true);
     try {
       final device = await DeviceInfoService.summary();
       final text =
-          '''お問い合わせ種別：$_category
+          '''案件ID：$_caseId
+お問い合わせ種別：$_category
 
 ${_messageController.text.trim()}
 
 ---
 アプリ：$appDisplayName $appVersion
 端末：$device''';
-      await SharePlus.instance.share(
-        ShareParams(
-          subject: '[$_category] ${_subjectController.text.trim()}',
-          title: '$appDisplayNameへのお問い合わせ',
-          text: text,
-          files: _attachment == null ? const [] : [XFile(_attachment!.path)],
-        ),
-      );
+      final subject =
+          '[$_caseId][$_category] ${_subjectController.text.trim()}';
+      if (useShareSheet || _attachment != null) {
+        await SharePlus.instance.share(
+          ShareParams(
+            subject: subject,
+            title: '$appDisplayNameへのお問い合わせ',
+            text: text,
+            files: _attachment == null ? null : [XFile(_attachment!.path)],
+          ),
+        );
+      } else {
+        final opened = await url_launcher.launchUrl(
+          contactMailUri(subject: subject, body: text),
+          mode: url_launcher.LaunchMode.externalApplication,
+        );
+        if (!opened) throw StateError('contact_mail_composer_unavailable');
+      }
     } catch (_) {
       if (mounted) {
         ScaffoldMessenger.of(context)
@@ -13770,11 +13802,28 @@ ${_messageController.text.trim()}
               key: const Key('sendContactButton'),
               onPressed: _sending ? null : _send,
               icon: const Icon(Icons.send_rounded),
-              label: Text(_sending ? '準備中…' : '送信方法を選ぶ'),
+              label: Text(
+                _sending
+                    ? '準備中…'
+                    : _attachment == null
+                    ? 'メールを作成'
+                    : '画像付きメールを作成',
+              ),
             ),
+            if (_attachment == null)
+              TextButton(
+                key: const Key('shareContactButton'),
+                onPressed: _sending ? null : () => _send(useShareSheet: true),
+                child: const Text('共有画面から作成（宛先は手入力）'),
+              ),
+            SelectableText('案件ID：$_caseId', key: const Key('contactCaseId')),
             const SizedBox(height: 10),
             const Text(
-              '送信先の受付窓口は未設定です。端末の共有画面からメールなどを選んで送信できます。',
+              '受付：$contactSupportEmail\n'
+              '画像なしのメール作成では宛先を設定します。画像付きや共有画面から作成する場合は、メールを選んで宛先を設定してください。\n'
+              'メールや共有画面を開いただけでは送信は完了しません。メールアプリで内容を確認して送信してください。\n'
+              '案件IDは問い合わせの対応を確認するために使います。\n'
+              'パスワードやログイン用トークンは送らないでください。',
               style: TextStyle(fontSize: 12, color: Color(0xFF6C746D)),
             ),
           ],

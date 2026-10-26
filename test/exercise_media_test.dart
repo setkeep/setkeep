@@ -142,80 +142,82 @@ void main() {
     'machine_lateral_raise': '0097',
   };
 
-  test('approved seven guides preserve exact exercise identities and bundle assets', () async {
-    const approved = {
-      'smith_bench_press': 'smith_bench_press_v1',
-      'smith_incline_press': 'smith_incline_press_v11',
-      'smith_squat': 'smith_squat_wrist_v2_white',
-      'decline_barbell_press': 'decline_barbell_press_v1',
-      'split_squat': 'split_squat_v1',
-      'rear_raise': 'rear_raise_v1',
-      'reverse_curl': 'reverse_curl_coordination_v2',
-    };
-    final manifest = await AssetManifest.loadFromAssetBundle(rootBundle);
-    for (final entry in approved.entries) {
-      final media = ExerciseMediaCatalog.forExerciseId(entry.key)!;
-      expect(ExerciseFormCatalog.byId[entry.key], isNotNull);
-      expect(media.exerciseId, entry.key);
-      expect(media.providerAssetId, entry.value);
-      expect(media.provider, 'setkeep_original');
-      expect(manifest.listAssets(), contains(media.assetPath));
-      expect(manifest.listAssets(), contains(media.thumbnailAssetPath));
-      expect(File(media.assetPath).lengthSync(), greaterThan(1000000));
-    }
-    expect(ExerciseMediaCatalog.forExerciseId('smith_decline_press'), isNull);
-    expect(
-      ExerciseMediaCatalog.forExerciseId('smith_bulgarian_split_squat'),
-      isNull,
-    );
-    expect(
-      ExerciseMediaCatalog.forExerciseId('bulgarian_split_squat')!.provider,
-      'vital_animations',
-    );
-  });
+  test(
+    'approved four guides preserve exact exercise identities and bundle assets',
+    () async {
+      const approved = {
+        'decline_barbell_press': 'decline_barbell_press_v1',
+        'split_squat': 'split_squat_v1',
+        'rear_raise': 'rear_raise_v1',
+        'reverse_curl': 'reverse_curl_coordination_v2',
+      };
+      final manifest = await AssetManifest.loadFromAssetBundle(rootBundle);
+      for (final entry in approved.entries) {
+        final media = ExerciseMediaCatalog.forExerciseId(entry.key)!;
+        expect(ExerciseFormCatalog.byId[entry.key], isNotNull);
+        expect(media.exerciseId, entry.key);
+        expect(media.providerAssetId, entry.value);
+        expect(media.provider, 'setkeep_original');
+        expect(manifest.listAssets(), contains(media.assetPath));
+        expect(manifest.listAssets(), contains(media.thumbnailAssetPath));
+        expect(File(media.assetPath).lengthSync(), greaterThan(1000000));
+      }
+      expect(ExerciseMediaCatalog.forExerciseId('smith_decline_press'), isNull);
+      expect(
+        ExerciseMediaCatalog.forExerciseId('smith_bulgarian_split_squat'),
+        isNull,
+      );
+      expect(
+        ExerciseMediaCatalog.forExerciseId('bulgarian_split_squat')!.provider,
+        'vital_animations',
+      );
+    },
+  );
 
-  test('white guide thumbnails keep the former label area clear', () async {
-    for (final id in [
-      'smith_bench_press',
-      'smith_incline_press',
-      'smith_squat',
-      'decline_barbell_press',
-      'split_squat',
-      'rear_raise',
-      'reverse_curl',
-    ]) {
-      final media = ExerciseMediaCatalog.forExerciseId(id)!;
-      final data = await rootBundle.load(media.thumbnailAssetPath!);
-      final codec = await ui.instantiateImageCodec(data.buffer.asUint8List());
-      final image = (await codec.getNextFrame()).image;
-      final pixels = (await image.toByteData(
-        format: ui.ImageByteFormat.rawRgba,
-      ))!.buffer.asUint8List();
-      var inkPixels = 0;
-      // This blank area includes the start of the former trial caption.
-      // The wider old panel check would reject the intended white background.
-      for (var y = (image.height * .02).floor(); y < image.height * .07; y++) {
-        for (var x = (image.width * .02).floor(); x < image.width * .18; x++) {
-          final offset = (y * image.width + x) * 4;
-          if (pixels[offset] < 225 ||
-              pixels[offset + 1] < 225 ||
-              pixels[offset + 2] < 225) {
-            inkPixels++;
+  test(
+    'approved guide thumbnails exclude the former trial overlay panel',
+    () async {
+      for (final id in [
+        'decline_barbell_press',
+        'split_squat',
+        'rear_raise',
+        'reverse_curl',
+      ]) {
+        final media = ExerciseMediaCatalog.forExerciseId(id)!;
+        final data = await rootBundle.load(media.thumbnailAssetPath!);
+        final codec = await ui.instantiateImageCodec(data.buffer.asUint8List());
+        final image = (await codec.getNextFrame()).image;
+        final pixels = (await image.toByteData(
+          format: ui.ImageByteFormat.rawRgba,
+        ))!.buffer.asUint8List();
+        var whitePanelPixels = 0;
+        for (var y = 11; y < 38; y++) {
+          for (var x = 9; x < 205; x++) {
+            final offset = (y * image.width + x) * 4;
+            if (pixels[offset] > 225 &&
+                pixels[offset + 1] > 225 &&
+                pixels[offset + 2] > 225) {
+              whitePanelPixels++;
+            }
           }
         }
+        expect(
+          whitePanelPixels,
+          0,
+          reason: '$id must not ship the white trial label panel',
+        );
+        image.dispose();
+        codec.dispose();
       }
-      expect(inkPixels, 0, reason: '$id must keep the old caption area white');
-      image.dispose();
-      codec.dispose();
-    }
-  });
+    },
+  );
 
   test('reviewed Vital IDs map to existing SETKEEP identities only', () async {
     expect(
       ExerciseMediaCatalog.entries.where(
         (media) => media.provider == 'vital_animations',
       ),
-      hasLength(108),
+      hasLength(109),
     );
     for (final entry in originalMappings.entries) {
       final media = ExerciseMediaCatalog.forExerciseId(entry.key)!;
@@ -261,7 +263,7 @@ void main() {
         media.thumbnailAssetPath,
         'assets/exercise_thumbnails/smith_incline_press_v11.png',
       );
-      expect(ExerciseMediaCatalog.entries, hasLength(115));
+      expect(ExerciseMediaCatalog.entries, hasLength(121));
       expect(File(media.assetPath).lengthSync(), greaterThan(100000));
       final manifest = await AssetManifest.loadFromAssetBundle(rootBundle);
       expect(manifest.listAssets(), contains(media.assetPath));
@@ -286,7 +288,7 @@ void main() {
       media.thumbnailAssetPath,
       'assets/exercise_thumbnails/smith_bench_press_v1.png',
     );
-    expect(ExerciseMediaCatalog.entries, hasLength(115));
+    expect(ExerciseMediaCatalog.entries, hasLength(121));
     expect(File(media.assetPath).lengthSync(), greaterThan(100000));
     final manifest = await AssetManifest.loadFromAssetBundle(rootBundle);
     expect(manifest.listAssets(), contains(media.assetPath));
@@ -315,22 +317,25 @@ void main() {
     for (final item in manifest['mappings'] as List) {
       final exerciseId = item['exerciseId'] as String;
       final vitalId = item['providerAssetId'] as String;
-      final media = ExerciseMediaCatalog.forExerciseId(exerciseId)!;
-      if (exerciseId == 'smith_squat') {
-        expect(media.provider, 'setkeep_original');
-        expect(media.providerAssetId, 'smith_squat_wrist_v2_white');
-      } else {
-        expect(media.providerAssetId, vitalId);
-      }
+      expect(
+        ExerciseMediaCatalog.forExerciseId(exerciseId)?.providerAssetId,
+        vitalId,
+      );
       expect(
         File('${source.path}/${item['sourceAsset']}').existsSync(),
         isTrue,
       );
-      // Purchased sources remain intact when an approved original overrides one ID.
-      final video = File('assets/vital_videos/$vitalId.mp4');
+      final video = File(
+        ExerciseMediaCatalog.forExerciseId(exerciseId)!.assetPath,
+      );
       expect(video.existsSync(), isTrue);
       expect(video.lengthSync(), greaterThan(100000));
-      expect(File('assets/vital_thumbnails/$vitalId.png').existsSync(), isTrue);
+      expect(
+        File(
+          ExerciseMediaCatalog.forExerciseId(exerciseId)!.thumbnailAssetPath!,
+        ).existsSync(),
+        isTrue,
+      );
     }
   });
 

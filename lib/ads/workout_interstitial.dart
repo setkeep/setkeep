@@ -160,6 +160,8 @@ class WorkoutInterstitialSession with WidgetsBindingObserver {
   bool _disposed = false;
   bool _foreground = true;
   bool _attempted = false;
+  int _loadGeneration = 0;
+  DateTime? _loadedAt;
   bool get attempted => _attempted;
 
   static Future<WorkoutInterstitialSession?> prepareForWorkoutCompletion({
@@ -189,20 +191,39 @@ class WorkoutInterstitialSession with WidgetsBindingObserver {
   }
 
   void preload() {
-    if (_disposed || _entitlement.adFree || !_foreground) return;
-    _loadFuture ??= _load();
+    if (_disposed || _attempted || _entitlement.adFree || !_foreground) return;
+    // Native ads expire; a long workout must not retain a stale preload.
+    if (_loadedAt != null &&
+        DateTime.now().difference(_loadedAt!) >= const Duration(minutes: 55)) {
+      _discardPreload();
+    }
+    _loadFuture ??= _load(++_loadGeneration);
   }
 
-  Future<InterstitialHandle?> _load() async {
+  void _discardPreload() {
+    _loadGeneration++;
+    _ad?.dispose();
+    _ad = null;
+    _loadedAt = null;
+    _loadFuture = null;
+  }
+
+  Future<InterstitialHandle?> _load(int generation) async {
     try {
       final ad = await _backend.load(_unitId);
-      if (_disposed || _entitlement.adFree || !_foreground) {
+      if (_disposed ||
+          _entitlement.adFree ||
+          !_foreground ||
+          generation != _loadGeneration) {
         ad?.dispose();
         return null;
       }
       _ad = ad;
+      _loadedAt = ad == null ? null : DateTime.now();
+      if (ad == null) _loadFuture = null;
       return ad;
     } catch (_) {
+      if (generation == _loadGeneration) _loadFuture = null;
       return null;
     }
   }
@@ -264,8 +285,7 @@ class WorkoutInterstitialSession with WidgetsBindingObserver {
 
   void _onEntitlement() {
     if (_entitlement.adFree) {
-      _ad?.dispose();
-      _ad = null;
+      _discardPreload();
     }
   }
 
@@ -273,8 +293,9 @@ class WorkoutInterstitialSession with WidgetsBindingObserver {
   void didChangeAppLifecycleState(AppLifecycleState state) {
     _foreground = state == AppLifecycleState.resumed;
     if (!_foreground) {
-      _ad?.dispose();
-      _ad = null;
+      _discardPreload();
+    } else if (!_attempted && !_disposed) {
+      preload();
     }
   }
 

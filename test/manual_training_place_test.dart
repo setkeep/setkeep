@@ -64,10 +64,26 @@ void main() {
       await TrainingPlacePreference.save(const TrainingPlace.manual('カネキンジム'));
       await t.pumpWidget(const MaterialApp(home: RegisteredGymsPage()));
       await t.pumpAndSettle();
-      expect(find.text(kanekinStore.displayName), findsOneWidget);
-      expect(find.text('いつもの場所 ✓ ・ 設備を見る'), findsOneWidget);
+      final preferred = find.byKey(const Key('preferredTrainingPlaceCard'));
+      expect(
+        find.descendant(
+          of: preferred,
+          matching: find.text(kanekinStore.chainName),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: preferred, matching: find.text(kanekinStore.name)),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const Key('preferredTrainingPlaceBadge')),
+        findsOneWidget,
+      );
       expect(find.byKey(const Key('manualPlaceカネキンジム')), findsNothing);
-      await t.tap(find.text(kanekinStore.displayName));
+      await t.tap(
+        find.descendant(of: preferred, matching: find.text('設備を見る  ›')),
+      );
       await t.pumpAndSettle();
       expect(find.byType(GymStoreEquipmentPage), findsOneWidget);
       expect(find.text('ダンベル'), findsWidgets);

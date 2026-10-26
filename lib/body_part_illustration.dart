@@ -2,6 +2,13 @@ import 'design/family_theme.dart';
 
 import 'package:flutter/material.dart';
 
+/// Display labels only; stored category keys remain unchanged.
+String bodyPartCategoryLabel(String category) => switch (category) {
+  '脚' => '下半身',
+  '腹' => '腹筋',
+  _ => category,
+};
+
 /// Consistent human renders for body-part and activity categories.
 class BodyPartIllustration extends StatelessWidget {
   const BodyPartIllustration({super.key, required this.category});
@@ -18,7 +25,7 @@ class BodyPartIllustration extends StatelessWidget {
   };
   @override
   Widget build(BuildContext context) {
-    final label = category == '腹' ? '腹筋' : category;
+    final label = bodyPartCategoryLabel(category);
     final asset = assets[category];
     return Semantics(
       label: '$labelの部位イラスト',

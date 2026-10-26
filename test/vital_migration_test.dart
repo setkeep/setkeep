@@ -67,7 +67,20 @@ void main() {
     for (final id in unmatched) {
       // An unmatched Vital exercise can have an explicitly authored guide.
       // Keep every other unmatched ID unavailable.
-      if (id == 'smith_incline_press' || id == 'smith_bench_press') {
+      if (const {
+        'smith_incline_press',
+        'smith_bench_press',
+        'decline_barbell_press',
+        'split_squat',
+        'rear_raise',
+        'reverse_curl',
+        'pallof_press',
+        'bayesian_curl',
+        'wall_sit',
+        'chest_supported_dumbbell_row',
+        'reverse_lunge',
+        'decline_dumbbell_fly',
+      }.contains(id)) {
         expect(
           ExerciseMediaCatalog.forExerciseId(id)?.provider,
           'setkeep_original',

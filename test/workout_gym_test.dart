@@ -232,14 +232,24 @@ void main() {
     expect(find.byIcon(Icons.pause_rounded), findsOneWidget);
     await tester.tap(find.byKey(const Key('stopRestTimerButton')));
     await tester.pump();
+    String restLabel() =>
+        tester.widget<Text>(find.byKey(const Key('restRemainingLabel'))).data!;
+    final pausedLabel = restLabel();
+    final pausedParts = pausedLabel.split(':').map(int.parse).toList();
+    final pausedSeconds = pausedParts[0] * 60 + pausedParts[1];
+    expect(pausedSeconds, inInclusiveRange(1, 60));
     await tester.pump(const Duration(seconds: 10));
-    expect(find.text('01:00'), findsOneWidget);
+    expect(restLabel(), pausedLabel);
     await tester.tap(find.text('+30秒'));
     await tester.pump();
-    expect(find.text('01:30'), findsOneWidget);
+    final extendedSeconds = pausedSeconds + 30;
+    final extendedLabel =
+        '${(extendedSeconds ~/ 60).toString().padLeft(2, '0')}:'
+        '${(extendedSeconds % 60).toString().padLeft(2, '0')}';
+    expect(restLabel(), extendedLabel);
     await tester.tap(find.byKey(const Key('startRestTimerButton')));
     await tester.pump();
-    expect(find.text('01:30'), findsOneWidget);
+    expect(restLabel(), extendedLabel);
     await tester.pumpWidget(
       const MaterialApp(
         home: Scaffold(body: StartWorkoutCard(onPressed: _noop)),

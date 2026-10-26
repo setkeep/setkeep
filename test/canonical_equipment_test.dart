@@ -30,6 +30,14 @@ GymStoreDetail resolvedDetail() => GymStoreDetail.fromJson({
         ],
       },
     },
+    {
+      'available': true,
+      'equipment': {
+        'id': 'bench',
+        'name': 'アジャスタブルベンチ',
+        'category': 'フリーウェイト',
+      },
+    },
   ],
   'evidence': [
     {
@@ -57,9 +65,9 @@ GymStoreDetail resolvedDetail() => GymStoreDetail.fromJson({
 void main() {
   test('canonical RPC data preserves inventory and deduplicates exercises', () {
     final d = resolvedDetail();
-    expect(d.equipment.single.rawName, 'ダンベル 1～50kg');
+    expect(d.equipment.first.rawName, 'ダンベル 1～50kg');
     expect(d.exerciseIds, {'dumbbell_curl', 'incline_dumbbell_press'});
-    expect(d.forEquipment(d.equipment.single.id), hasLength(3));
+    expect(d.forEquipment(d.equipment.first.id), hasLength(3));
     final restored = GymStoreDetail.fromJson(d.toJson());
     expect(restored.exerciseIds, d.exerciseIds);
     expect(restored.evidence.last.equipmentNames, ['ダンベル', 'アジャスタブルベンチ']);
@@ -80,7 +88,7 @@ void main() {
           theme: ThemeData(platform: platform),
           home: GymEquipmentExercisesPage(
             store: d.store,
-            equipment: d.equipment.single,
+            equipment: d.equipment.first,
             evidence: d.evidence,
             allowReports: false,
             onAdd: (ids) async => batches.add(ids),

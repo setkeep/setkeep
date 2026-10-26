@@ -1,4 +1,5 @@
 import 'support/signed_in_auth.dart';
+
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -7,6 +8,12 @@ import 'package:setkeep/main.dart';
 import 'package:setkeep/design/app_colors.dart';
 import 'package:setkeep/startup/startup_splash.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+Future<void> settleStartup(WidgetTester tester) async {
+  await tester.pumpAndSettle();
+  await tester.pump(const Duration(milliseconds: 200));
+  await tester.pumpAndSettle();
+}
 
 void main() {
   const androidLogo =
@@ -18,12 +25,14 @@ void main() {
     'general startup reaches onboarding without an extra loading gate',
     (tester) async {
       SharedPreferences.setMockInitialValues({});
-      await tester.pumpWidget(const SetkeepApp(auth: SignedInTestAuth(), showStartup: true));
+      await tester.pumpWidget(
+        const SetkeepApp(auth: SignedInTestAuth(), showStartup: true),
+      );
       final splash = tester.widget(
         find.byWidgetPredicate((widget) => widget is StartupSplash),
       ) as StartupSplash;
       expect(splash.accent, AppColors.primaryGreen);
-      await tester.pumpAndSettle();
+      await settleStartup(tester);
       expect(find.text('ジムと一緒にトレーニングを記録'), findsOneWidget);
       expect(find.byType(CircularProgressIndicator), findsNothing);
     },
@@ -33,8 +42,10 @@ void main() {
     tester,
   ) async {
     SharedPreferences.setMockInitialValues({'onboarding_completed': true});
-    await tester.pumpWidget(const SetkeepApp(auth: SignedInTestAuth(), showStartup: true));
-    await tester.pumpAndSettle();
+    await tester.pumpWidget(
+      const SetkeepApp(auth: SignedInTestAuth(), showStartup: true),
+    );
+    await settleStartup(tester);
     expect(find.text('利用規約を読む'), findsOneWidget);
     expect(find.byType(CircularProgressIndicator), findsNothing);
   });
@@ -69,7 +80,7 @@ void main() {
       );
       first.complete();
       await tester.pump();
-      await tester.pumpAndSettle();
+      await settleStartup(tester);
       expect(
         tester.getSize(find.byKey(const Key('startupProgressFill'))).width,
         86,
@@ -78,10 +89,48 @@ void main() {
       expect(find.text('ready'), findsNothing);
       second.complete();
       await tester.pump();
-      await tester.pumpAndSettle();
+      await settleStartup(tester);
       expect(find.text('ready'), findsOneWidget);
     },
   );
+
+  testWidgets('fast initialization animates then holds 100 before navigation', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: StartupSplash<String>(
+          background: Colors.white,
+          track: Colors.grey,
+          accent: AppColors.primaryGreen,
+          androidLogo: androidLogo,
+          iosLogo: iosLogo,
+          initialize: (progress, offline) async {
+            progress(0.2);
+            progress(0.7);
+            return 'ready';
+          },
+          destination: (_) => const Text('ready'),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    final width = tester
+        .getSize(find.byKey(const Key('startupProgressFill')))
+        .width;
+    expect(width, greaterThan(0));
+    expect(width, lessThan(172));
+    expect(find.text('ready'), findsNothing);
+    await tester.pump(const Duration(milliseconds: 450));
+    expect(
+      tester.getSize(find.byKey(const Key('startupProgressFill'))).width,
+      172,
+    );
+    expect(find.text('ready'), findsNothing);
+    await tester.pump(const Duration(milliseconds: 200));
+    expect(find.text('ready'), findsOneWidget);
+  });
 
   testWidgets('failure stays below 100 and can retry', (tester) async {
     var calls = 0;
@@ -114,6 +163,7 @@ void main() {
     await tester.tap(find.text('Retry'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 250));
+    await settleStartup(tester);
     expect(find.text('ready'), findsOneWidget);
     expect(calls, 2);
   });

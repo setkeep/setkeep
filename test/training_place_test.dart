@@ -228,11 +228,18 @@ void main() {
     await t.tap(find.byKey(const Key('defaultTrainingPlacea')));
     await t.pumpAndSettle();
     expect((await TrainingPlacePreference.load()).storeId, 'a');
+    final preferred = find.byKey(const Key('preferredTrainingPlaceCard'));
+    expect(find.byKey(const Key('defaultTrainingPlacea')), findsNothing);
     expect(
-      t
-          .widget<TextButton>(find.byKey(const Key('defaultTrainingPlacea')))
-          .onPressed,
-      isNull,
+      find.descendant(
+        of: preferred,
+        matching: find.byKey(const Key('preferredTrainingPlaceBadge')),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: preferred, matching: find.text(storeA.chainName)),
+      findsOneWidget,
     );
     expect(
       t
@@ -243,11 +250,24 @@ void main() {
     await t.pumpWidget(const SizedBox());
     await t.pumpWidget(const MaterialApp(home: RegisteredGymsPage()));
     await t.pumpAndSettle();
-    expect(find.text('いつもの場所 ✓ ・ 設備を見る'), findsOneWidget);
-    await t.tap(find.byKey(const Key('removeRegisteredGymb')));
+    expect(
+      find.descendant(of: preferred, matching: find.text(storeA.chainName)),
+      findsOneWidget,
+    );
+    final removeB = find.byKey(const Key('removeRegisteredGymb'));
+    await t.ensureVisible(removeB);
+    await t.pumpAndSettle();
+    await t.tap(removeB);
+    await t.pumpAndSettle();
+    await t.tap(find.text('利用場所から削除'));
     await t.pumpAndSettle();
     expect((await TrainingPlacePreference.load()).storeId, 'a');
-    await t.tap(find.byKey(const Key('removeRegisteredGyma')));
+    final removeA = find.byKey(const Key('removeRegisteredGyma'));
+    await t.ensureVisible(removeA);
+    await t.pumpAndSettle();
+    await t.tap(removeA);
+    await t.pumpAndSettle();
+    await t.tap(find.text('利用場所から削除'));
     await t.pumpAndSettle();
     expect((await TrainingPlacePreference.load()).name, '自宅');
     expect(repo.saved, isEmpty);

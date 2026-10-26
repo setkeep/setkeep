@@ -181,6 +181,8 @@ void main() {
     await tester.pumpWidget(SetkeepApp(showStartup: true, auth: auth));
     expect(find.byType(HomeShell), findsNothing);
     await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 200));
+    await tester.pumpAndSettle();
     expect(find.byType(HomeShell), findsOneWidget);
     expect(find.byKey(const Key('requiredAccountPage')), findsNothing);
   });
@@ -195,6 +197,8 @@ void main() {
     final auth = _Auth();
     addTearDown(auth.close);
     await tester.pumpWidget(SetkeepApp(showStartup: true, auth: auth));
+    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 200));
     await tester.pumpAndSettle();
     expect(find.byType(HomeShell), findsNothing);
     expect(find.byKey(const Key('requiredAccountPage')), findsOneWidget);

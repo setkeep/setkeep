@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
@@ -37,6 +39,18 @@ class _StartupSplashState<T> extends State<StartupSplash<T>> {
   bool _finished = false;
   bool _failed = false;
   int _attempt = 0;
+  Stopwatch? _startupClock;
+  Timer? _completionHold;
+  Duration _animationDuration = const Duration(milliseconds: 220);
+
+  static const _minimumProgressDuration = Duration(milliseconds: 700);
+  static const _fullProgressHold = Duration(milliseconds: 180);
+
+  @override
+  void dispose() {
+    _completionHold?.cancel();
+    super.dispose();
+  }
 
   @override
   void initState() {
@@ -47,8 +61,11 @@ class _StartupSplashState<T> extends State<StartupSplash<T>> {
   Future<void> _start(bool offline) async {
     if (!mounted) return;
     final attempt = ++_attempt;
+    _completionHold?.cancel();
+    _startupClock = Stopwatch()..start();
     setState(() {
       _progress = 0;
+      _animationDuration = const Duration(milliseconds: 220);
       _result = null;
       _failed = false;
       _finished = false;
@@ -57,11 +74,16 @@ class _StartupSplashState<T> extends State<StartupSplash<T>> {
       final result = await widget.initialize((value) {
         if (!mounted || attempt != _attempt) return;
         // A failed or unfinished startup never displays completion.
-        setState(() => _progress = value.clamp(0.0, 0.99));
+        if (!value.isFinite) return;
+        setState(() => _progress = value.clamp(_progress, 0.99));
       }, offline);
       if (!mounted || attempt != _attempt) return;
       setState(() {
         _result = result;
+        final remaining = _minimumProgressDuration - _startupClock!.elapsed;
+        _animationDuration = remaining > const Duration(milliseconds: 220)
+            ? remaining
+            : const Duration(milliseconds: 220);
         _progress = 1;
       });
     } catch (_) {
@@ -104,11 +126,17 @@ class _StartupSplashState<T> extends State<StartupSplash<T>> {
                     ),
                     TweenAnimationBuilder<double>(
                       tween: Tween<double>(end: _progress),
-                      duration: const Duration(milliseconds: 220),
+                      duration: _animationDuration,
                       curve: Curves.easeOut,
                       onEnd: () {
                         if (_progress == 1 && _result != null && mounted) {
-                          setState(() => _finished = true);
+                          final attempt = _attempt;
+                          _completionHold?.cancel();
+                          _completionHold = Timer(_fullProgressHold, () {
+                            if (mounted && attempt == _attempt) {
+                              setState(() => _finished = true);
+                            }
+                          });
                         }
                       },
                       builder: (context, value, _) => SizedBox(
