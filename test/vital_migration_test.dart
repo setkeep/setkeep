@@ -64,8 +64,24 @@ void main() {
       expect(media.assetPath, 'assets/vital_videos/$vitalId.mp4');
       expect(media.thumbnailAssetPath, 'assets/vital_thumbnails/$vitalId.png');
     }
+    const approvedOriginals = {
+      'pallof_press',
+      'bayesian_curl',
+      'wall_sit',
+      'chest_supported_dumbbell_row',
+      'reverse_lunge',
+      'decline_dumbbell_fly',
+    };
+    expect(migrated.intersection(approvedOriginals), isEmpty);
     for (final id in unmatched) {
-      expect(ExerciseMediaCatalog.forExerciseId(id), isNull);
+      if (approvedOriginals.contains(id)) {
+        expect(
+          ExerciseMediaCatalog.forExerciseId(id)?.provider,
+          'setkeep_original',
+        );
+      } else {
+        expect(ExerciseMediaCatalog.forExerciseId(id), isNull);
+      }
     }
     for (final id in ['dy_row', 'low_row', 'linear_row', 'high_row']) {
       final decision = review.singleWhere((entry) => entry['exerciseId'] == id);
