@@ -114,6 +114,7 @@ void main() {
       for (final pair in [
         ['cable_pullover', 'straight_arm_pulldown'],
         ['triceps_pushdown', 'rope_pushdown'],
+        ['weighted_back_extension', 'back_extension'],
       ]) {
         final original = workout([
           oldSet(pair[0], '保存名A'),
