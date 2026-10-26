@@ -98,6 +98,11 @@ void main() {
       'debugStatus',
     ))!;
     expect(after['completionCount'], (before['completionCount'] ?? 0) + 1);
+    // The running notification timeout must not remove the replacement action.
+    expect(after['delivered'], contains(7340));
+    final ready = (after['ongoingDetails'] as List).single as Map;
+    expect(ready['chronometer'], false);
+    expect(ready['actions'], ['セット完了']);
     await AndroidWorkoutDraft.clear();
   });
 

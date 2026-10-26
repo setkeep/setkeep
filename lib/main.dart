@@ -269,6 +269,16 @@ class RestNotificationService {
     }
   }
 
+  static Future<bool> requestExactAlarmPermission() async {
+    if (!Platform.isAndroid) return false;
+    try {
+      return await _channel.invokeMethod<bool>('requestExactAlarmPermission') ??
+          false;
+    } on PlatformException {
+      return false;
+    }
+  }
+
   static Future<void> playCompletionFeedback() async {
     if (!(Platform.isIOS || Platform.isAndroid)) {
       await SystemSound.play(SystemSoundType.alert);
@@ -5906,6 +5916,7 @@ class _WorkoutPageState extends State<WorkoutPage> with WidgetsBindingObserver {
   Timer? _restTimer;
   Duration _elapsed = Duration.zero;
   int _restRemaining = 0;
+  bool _exactRestAlarmAllowed = true;
   int _restRevision = 0;
   DateTime? _restEndsAt;
   String _restExerciseName = '';
@@ -6113,6 +6124,9 @@ class _WorkoutPageState extends State<WorkoutPage> with WidgetsBindingObserver {
       return;
     }
     if (native != null) {
+      setState(
+        () => _exactRestAlarmAllowed = native['exactAlarmAllowed'] != false,
+      );
       if (Platform.isAndroid && native['target'] is Map) {
         final target = Map<String, String>.from(native['target'] as Map);
         _restTarget = target['sessionId'] == _sessionId ? target : null;
@@ -6502,7 +6516,7 @@ class _WorkoutPageState extends State<WorkoutPage> with WidgetsBindingObserver {
         exerciseName: _restExerciseName,
         target: _restTarget,
         restSeconds: RestTimerPreference.seconds,
-      ),
+      ).then((_) => _syncRestState()),
     );
     _watchRestDeadline();
   }
@@ -7168,6 +7182,31 @@ class _WorkoutPageState extends State<WorkoutPage> with WidgetsBindingObserver {
                       ),
                       child: Column(
                         children: [
+                          if (!_exactRestAlarmAllowed)
+                            ListTile(
+                              key: const Key('restAlarmPermissionNotice'),
+                              contentPadding: EdgeInsets.zero,
+                              title: const Text('ロック中の終了通知が遅れる場合があります'),
+                              subtitle: const Text(
+                                '時刻どおりに通知するには「アラームとリマインダー」を許可してください。',
+                              ),
+                              trailing: TextButton(
+                                onPressed: () async {
+                                  final opened =
+                                      await RestNotificationService.requestExactAlarmPermission();
+                                  if (!opened && context.mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Text(
+                                          '端末の設定からSETKEEPの「アラームとリマインダー」を確認してください。',
+                                        ),
+                                      ),
+                                    );
+                                  }
+                                },
+                                child: const Text('設定'),
+                              ),
+                            ),
                           Row(
                             children: [
                               Expanded(
@@ -8408,20 +8447,61 @@ class ExerciseSelection {
 class ExerciseFavoritePreference {
   ExerciseFavoritePreference._();
   static const _key = 'favorite_exercise_identities';
+  static Future<void>? _writes;
 
-  static Future<Set<String>> load() async {
+  static Future<Set<String>> _read() async {
     final preferences = await SharedPreferences.getInstance();
+    // A new picker must read durable storage, including writes from another
+    // engine or a picker that remained underneath the current route.
+    await preferences.reload();
     return (preferences.getStringList(_key) ?? const <String>[])
         .map(canonicalExerciseIdentity)
         .toSet();
   }
 
-  static Future<void> save(Set<String> identities) async {
+  static Future<Set<String>> load() async {
+    await _writes;
+    return _read();
+  }
+
+  static Future<T> _serialize<T>(Future<T> Function() operation) async {
+    final previous = _writes;
+    final completion = Completer<void>();
+    _writes = completion.future;
+    try {
+      if (previous != null) await previous;
+      return await operation();
+    } finally {
+      if (identical(_writes, completion.future)) _writes = null;
+      completion.complete();
+    }
+  }
+
+  static Future<void> _write(Set<String> identities) async {
     final preferences = await SharedPreferences.getInstance();
-    if (!await preferences.setStringList(_key, identities.toList()..sort())) {
+    final normalized = identities.map(canonicalExerciseIdentity).toSet();
+    if (!await preferences.setStringList(_key, normalized.toList()..sort())) {
       throw StateError('Favorites could not be saved');
     }
   }
+
+  static Future<void> save(Set<String> identities) =>
+      _serialize(() => _write(Set<String>.of(identities)));
+
+  /// Update one identity against the latest saved set. Saving an older picker
+  /// snapshot would otherwise discard favorites added by another picker.
+  static Future<Set<String>> setFavorite(String identity, bool selected) =>
+      _serialize(() async {
+        final latest = await _read();
+        final canonical = canonicalExerciseIdentity(identity);
+        if (selected) {
+          latest.add(canonical);
+        } else {
+          latest.remove(canonical);
+        }
+        await _write(latest);
+        return latest;
+      });
 }
 
 String exerciseSortKey(String name) => String.fromCharCodes(
@@ -8571,11 +8651,13 @@ class _ExercisePickerSheetState extends State<ExercisePickerSheet> {
 
   Future<void> _toggleFavorite(String identity) async {
     if (!_favoritesReady || _savingFavorite) return;
-    final updated = {..._favorites};
-    if (!updated.remove(identity)) updated.add(identity);
+    final selected = !_favorites.contains(identity);
     setState(() => _savingFavorite = true);
     try {
-      await ExerciseFavoritePreference.save(updated);
+      final updated = await ExerciseFavoritePreference.setFavorite(
+        identity,
+        selected,
+      );
       if (mounted) setState(() => _favorites = updated);
     } catch (_) {
       if (mounted) {
@@ -8942,7 +9024,9 @@ class _ExercisePickerSheetState extends State<ExercisePickerSheet> {
                           selectedTileColor: FamilyPalette.of(context).soft,
                           selectedColor: const Color(0xFF101820),
                           leading: ExerciseListThumbnail(
+                            key: ValueKey('exerciseGuide${e.identity}'),
                             exerciseId: e.exerciseId,
+                            onTap: () => _showExerciseMuscles(e),
                           ),
                           title: Text(
                             exerciseDisplayName(
@@ -9217,7 +9301,6 @@ class ExerciseMuscleDetailPage extends StatelessWidget {
     ),
     clipBehavior: Clip.antiAlias,
     child: MuscleMannequinView(
-      tapToFlip: false,
       scores: scores,
       fallbackBodyPartCounts: {exercise.bodyPart: 1},
     ),
@@ -9701,7 +9784,31 @@ class WorkoutExerciseCardHeader extends StatelessWidget {
     ),
     child: Row(
       children: [
-        ExerciseListThumbnail(exerciseId: exerciseId),
+        ExerciseListThumbnail(
+          key: ValueKey(
+            'workoutExerciseGuide${exerciseIdentity(exerciseId, name)}',
+          ),
+          exerciseId: exerciseId,
+          onTap: () {
+            FocusManager.instance.primaryFocus?.unfocus();
+            final form = ExerciseFormCatalog.resolve(exerciseId, name);
+            Navigator.of(context).push<void>(
+              MaterialPageRoute(
+                builder: (_) => ExerciseMuscleDetailPage(
+                  exercise: form == null
+                      ? ExerciseTemplate(
+                          name: name,
+                          exerciseId: exerciseId,
+                          bodyPart: bodyPart,
+                          equipment: equipment,
+                          startWeight: 0,
+                        )
+                      : ExerciseTemplate.fromForm(form),
+                ),
+              ),
+            );
+          },
+        ),
         const SizedBox(width: 10),
         Expanded(
           child: Column(
