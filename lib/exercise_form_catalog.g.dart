@@ -1596,7 +1596,7 @@ const List<Map<String, Object?>> exerciseFormData = [
       "productionRoute": false,
     },
     "equipmentLabel": "ローマンチェア",
-    "tags": [],
+    "tags": ["バックエクステンション（荷重）", "Weighted Back Extension"],
     "englishName": "Back Extension",
     "distanceUnit": "km",
     "previewEnabled": false,
@@ -1663,6 +1663,8 @@ const List<Map<String, Object?>> exerciseFormData = [
     "distanceUnit": "km",
     "authoringNotes": "Blender 4.5.3 export and start/mid/end preview reviewed. Original procedural equipment with author-selected dimensions; native-platform and production-route review pending.",
     "previewEnabled": false,
+    "canonicalExerciseId": "back_extension",
+    "selectable": false,
   },
   {
     "exerciseId": "shoulder_press",
