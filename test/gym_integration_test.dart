@@ -187,6 +187,8 @@ void main() {
     expect(repo.saved.length, 2);
     await t.tap(find.byKey(const Key('removeRegisteredGyma')));
     await t.pumpAndSettle();
+    await t.tap(find.text('利用場所から削除'));
+    await t.pumpAndSettle();
     expect(repo.saved.single.id, 'b');
   });
   testWidgets(

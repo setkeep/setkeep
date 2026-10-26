@@ -339,188 +339,266 @@ class _RegisteredGymsPageState extends State<RegisteredGymsPage> {
     }
   }
 
-  Widget _manualTile(String name) => Card(
-    child: Column(
-      children: [
-        ListTile(
-          key: ValueKey('manualPlace$name'),
-          title: Text(name),
-          subtitle: Text(
-            _defaultPlace.manualName == name ? 'いつもの場所 ✓ ・ 手動登録' : '手動登録',
-          ),
-          onTap: _busy
-              ? null
-              : () => Navigator.push<void>(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => PrivatePlaceEquipmentPage(
-                      placeId: CustomGymPreference.idFor(name)!,
-                      name: name,
-                    ),
-                  ),
-                ),
-          trailing: PopupMenuButton<String>(
-            key: ValueKey('manualPlaceActions$name'),
-            enabled: !_busy,
-            itemBuilder: (_) => const [
-              PopupMenuItem(value: 'rename', child: Text('名前を変更')),
-              PopupMenuItem(value: 'delete', child: Text('削除')),
-            ],
-            onSelected: (action) async {
-              if (action == 'rename') {
-                final updated = await showCustomGymDialog(
-                  context,
-                  initialName: name,
-                );
-                if (updated == null || !mounted) return;
-                await _change(() async {
-                  if (await CustomGymPreference.update(name, updated) &&
-                      _defaultPlace.manualName == name) {
-                    await TrainingPlacePreference.save(
-                      TrainingPlace.manual(updated),
-                    );
-                  }
-                });
-              } else {
-                await _change(() async {
-                  await CustomGymPreference.remove(name);
-                  if (_defaultPlace.manualName == name) {
-                    await TrainingPlacePreference.save(
-                      const TrainingPlace.home(),
-                    );
-                  }
-                });
-              }
-            },
-          ),
-        ),
-        if (_defaultPlace.manualName != name)
-          TextButton(
-            key: ValueKey('defaultManualPlace$name'),
-            onPressed: _busy
-                ? null
-                : () => _change(
-                    () => TrainingPlacePreference.save(
-                      TrainingPlace.manual(name),
-                    ),
-                  ),
-            child: const Text('いつもの場所に設定'),
-          ),
-      ],
-    ),
-  );
+  bool _samePlace(TrainingPlace a, TrainingPlace b) =>
+      a.isHome && b.isHome ||
+      a.storeId != null && a.storeId == b.storeId ||
+      a.manualName != null && a.manualName == b.manualName;
 
-  @override
-  Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const Text('利用場所')),
-    body: SafeArea(
-      child: ListView(
-        padding: const EdgeInsets.all(16),
+  Future<void> _manualAction(String name, String action) async {
+    if (action == 'rename') {
+      final updated = await showCustomGymDialog(context, initialName: name);
+      if (updated == null || !mounted) return;
+      await _change(() async {
+        if (await CustomGymPreference.update(name, updated) &&
+            _defaultPlace.manualName == name) {
+          await TrainingPlacePreference.save(TrainingPlace.manual(updated));
+        }
+      });
+    } else {
+      await _change(() async {
+        await CustomGymPreference.remove(name);
+        if (_defaultPlace.manualName == name) {
+          await TrainingPlacePreference.save(const TrainingPlace.home());
+        }
+      });
+    }
+  }
+
+  Future<void> _removeStore(GymStore store) => _change(() async {
+    await _repo.unregister(store.id);
+    if (_defaultPlace.storeId == store.id) {
+      await TrainingPlacePreference.save(const TrainingPlace.home());
+    }
+  });
+
+  Widget _placeTile(TrainingPlace place, {required bool featured}) {
+    final store = place.store;
+    final name = place.manualName;
+    final canChoose = store?.isSelectable != false;
+    final open = place.isHome
+        ? null
+        : () => Navigator.push<void>(
+            context,
+            MaterialPageRoute(
+              builder: (_) => store != null
+                  ? GymStoreEquipmentPage(store: store)
+                  : PrivatePlaceEquipmentPage(
+                      placeId: place.customPlaceId!,
+                      name: place.name,
+                    ),
+            ),
+          );
+    return Padding(
+      key: place.isHome
+          ? const Key('trainingPlaceHome')
+          : name != null
+          ? ValueKey('manualPlace$name')
+          : ValueKey('registeredPlace${store!.id}'),
+      padding: EdgeInsets.fromLTRB(
+        16,
+        featured ? 18 : 12,
+        8,
+        featured ? 16 : 10,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('登録した店舗は本人だけに表示されます。未ログイン時はこの端末に保存します。'),
-          if (_busy) const LinearProgressIndicator(),
-          if (_failed) gymError(_load),
-          if (_defaultPlace.manualName != null &&
-              CustomGymPreference.gyms.contains(_defaultPlace.manualName))
-            _manualTile(_defaultPlace.manualName!),
-          for (final store in <GymStore?>[
-            ..._stores.where((s) => s.id == _defaultPlace.storeId),
-            null,
-            ..._stores.where((s) => s.id != _defaultPlace.storeId),
-          ])
-            if (store == null)
-              Card(
-                child: ListTile(
-                  key: const Key('trainingPlaceHome'),
-                  leading: const Icon(Icons.home_outlined),
-                  title: const Text('自宅'),
-                  subtitle: Text(
-                    _defaultPlace.isHome ? 'いつもの場所 ✓' : 'いつもの場所に設定',
-                  ),
-                  onTap: _busy
-                      ? null
-                      : () => _change(
-                          () => TrainingPlacePreference.save(
-                            const TrainingPlace.home(),
-                          ),
-                        ),
-                ),
-              )
-            else
-              Card(
-                child: Column(
-                  children: [
-                    ListTile(
-                      title: Text(store.displayName),
-                      subtitle: Text(
-                        _defaultPlace.storeId == store.id
-                            ? (store.isSelectable
-                                  ? 'いつもの場所 ✓ ・ 設備を見る'
-                                  : 'いつもの場所 ✓ ・ ${store.statusLabel}')
-                            : store.isSelectable
-                            ? '設備を見る'
-                            : '${store.statusLabel} ・ 過去情報を参照できます',
-                      ),
-                      onTap: () => Navigator.push<void>(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => GymStoreEquipmentPage(store: store),
-                        ),
-                      ),
-                      trailing: IconButton(
-                        key: ValueKey('removeRegisteredGym${store.id}'),
-                        tooltip: '利用場所から削除',
-                        icon: const Icon(Icons.remove_circle_outline),
-                        onPressed: _busy
-                            ? null
-                            : () => _change(() async {
-                                await _repo.unregister(store.id);
-                                if (_defaultPlace.storeId == store.id) {
-                                  await TrainingPlacePreference.save(
-                                    const TrainingPlace.home(),
-                                  );
-                                }
-                              }),
-                      ),
-                    ),
-                    TextButton.icon(
-                      key: ValueKey('defaultTrainingPlace${store.id}'),
-                      onPressed:
-                          _busy ||
-                              !store.isSelectable ||
-                              _defaultPlace.storeId == store.id
-                          ? null
-                          : () => _change(
-                              () => TrainingPlacePreference.save(
-                                TrainingPlace.store(store),
-                              ),
+          Row(
+            children: [
+              if (place.isHome) ...[
+                const Icon(Icons.home_outlined, size: 28),
+                const SizedBox(width: 12),
+              ],
+              Expanded(
+                child: featured && store != null
+                    ? Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            store.chainName,
+                            style: const TextStyle(
+                              fontSize: 21,
+                              fontWeight: FontWeight.w800,
                             ),
-                      icon: Icon(
-                        _defaultPlace.storeId == store.id
-                            ? Icons.check
-                            : Icons.push_pin_outlined,
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            store.name,
+                            style: const TextStyle(fontSize: 15),
+                          ),
+                        ],
+                      )
+                    : Text(
+                        place.name,
+                        style: TextStyle(
+                          fontSize: featured ? 21 : 17,
+                          fontWeight: FontWeight.w800,
+                        ),
                       ),
-                      label: Text(
-                        _defaultPlace.storeId == store.id
-                            ? 'いつもの場所'
-                            : 'いつもの場所に設定',
-                      ),
-                    ),
+              ),
+              if (store != null)
+                PopupMenuButton<String>(
+                  key: ValueKey('removeRegisteredGym${store.id}'),
+                  tooltip: '${place.name}を管理',
+                  enabled: !_busy,
+                  onSelected: (_) => _removeStore(store),
+                  itemBuilder: (_) => const [
+                    PopupMenuItem(value: 'remove', child: Text('利用場所から削除')),
+                  ],
+                )
+              else if (name != null)
+                PopupMenuButton<String>(
+                  key: ValueKey('manualPlaceActions$name'),
+                  tooltip: '$nameを管理',
+                  enabled: !_busy,
+                  onSelected: (action) => _manualAction(name, action),
+                  itemBuilder: (_) => const [
+                    PopupMenuItem(value: 'rename', child: Text('名前を変更')),
+                    PopupMenuItem(value: 'delete', child: Text('削除')),
                   ],
                 ),
-              ),
-          for (final name in CustomGymPreference.gyms)
-            if (name != _defaultPlace.manualName) _manualTile(name),
-          FilledButton.icon(
-            key: const Key('registerGymButton'),
-            onPressed: _busy ? null : _add,
-            icon: const Icon(Icons.add),
-            label: const Text('ジムを追加'),
+            ],
+          ),
+          if (!canChoose)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text('${store!.statusLabel} ・ 過去情報を参照できます'),
+            ),
+          const SizedBox(height: 6),
+          Wrap(
+            spacing: 12,
+            runSpacing: 4,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              if (open != null)
+                TextButton.icon(
+                  onPressed: open,
+                  icon: const Icon(Icons.fitness_center, size: 20),
+                  label: const Text('設備を見る  ›'),
+                ),
+              if (featured)
+                Container(
+                  key: const Key('preferredTrainingPlaceBadge'),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 8,
+                  ),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFE0FFA1),
+                    borderRadius: BorderRadius.circular(30),
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.check_circle,
+                        size: 20,
+                        color: Color(0xFF234000),
+                      ),
+                      SizedBox(width: 6),
+                      Text(
+                        'いつもの場所',
+                        style: TextStyle(
+                          color: Color(0xFF234000),
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ],
+                  ),
+                )
+              else
+                TextButton.icon(
+                  key: store != null
+                      ? ValueKey('defaultTrainingPlace${store.id}')
+                      : name != null
+                      ? ValueKey('defaultManualPlace$name')
+                      : const Key('defaultTrainingPlaceHome'),
+                  onPressed: _busy || !canChoose
+                      ? null
+                      : () =>
+                            _change(() => TrainingPlacePreference.save(place)),
+                  icon: const Icon(Icons.push_pin_outlined, size: 19),
+                  label: const Text('いつもの場所に設定'),
+                ),
+            ],
           ),
         ],
       ),
-    ),
-  );
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final places = <TrainingPlace>[
+      const TrainingPlace.home(),
+      ..._stores.map(TrainingPlace.store),
+      ...CustomGymPreference.gyms.map(TrainingPlace.manual),
+    ];
+    final preferred =
+        places.where((p) => _samePlace(p, _defaultPlace)).firstOrNull ??
+        _defaultPlace;
+    final others = places.where((p) => !_samePlace(p, preferred)).toList();
+    return Scaffold(
+      appBar: AppBar(title: const Text('利用場所')),
+      body: SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+          children: [
+            const Text('登録した場所は自分だけに表示されます。\n未ログイン時はこの端末に保存します。'),
+            if (_busy) const LinearProgressIndicator(),
+            if (_failed) gymError(_load),
+            const SizedBox(height: 24),
+            const Text(
+              'いつもの場所',
+              style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800),
+            ),
+            const SizedBox(height: 10),
+            Card(
+              key: const Key('preferredTrainingPlaceCard'),
+              margin: EdgeInsets.zero,
+              clipBehavior: Clip.antiAlias,
+              child: _placeTile(preferred, featured: true),
+            ),
+            if (others.isNotEmpty) ...[
+              const SizedBox(height: 24),
+              const Text(
+                'その他の場所',
+                style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800),
+              ),
+              const SizedBox(height: 10),
+              Card(
+                key: const Key('otherTrainingPlaces'),
+                margin: EdgeInsets.zero,
+                clipBehavior: Clip.antiAlias,
+                child: Column(
+                  children: [
+                    for (var i = 0; i < others.length; i++) ...[
+                      if (i > 0)
+                        const Padding(
+                          padding: EdgeInsets.symmetric(horizontal: 16),
+                          child: Divider(height: 1),
+                        ),
+                      _placeTile(others[i], featured: false),
+                    ],
+                  ],
+                ),
+              ),
+            ],
+            const SizedBox(height: 16),
+            FilledButton.icon(
+              key: const Key('registerGymButton'),
+              onPressed: _busy ? null : _add,
+              style: FilledButton.styleFrom(
+                minimumSize: const Size.fromHeight(54),
+              ),
+              icon: const Icon(Icons.add),
+              label: const Text('ジムを追加'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 class GymStoreEquipmentPage extends StatefulWidget {

@@ -48,7 +48,17 @@ flutter:
     - assets/exercise_videos/smith_bench_press_v1.mp4
     - assets/exercise_thumbnails/smith_bench_press_v1.png
     - assets/exercise_videos/smith_incline_press_v11.mp4
+    - assets/exercise_videos/smith_squat_wrist_v2_white.mp4
     - assets/exercise_thumbnails/smith_incline_press_v11.png
+    - assets/exercise_thumbnails/smith_squat_wrist_v2_white.png
+    - assets/exercise_videos/decline_barbell_press_v1.mp4
+    - assets/exercise_thumbnails/decline_barbell_press_v1.png
+    - assets/exercise_videos/split_squat_v1.mp4
+    - assets/exercise_thumbnails/split_squat_v1.png
+    - assets/exercise_videos/rear_raise_v1.mp4
+    - assets/exercise_thumbnails/rear_raise_v1.png
+    - assets/exercise_videos/reverse_curl_coordination_v2.mp4
+    - assets/exercise_thumbnails/reverse_curl_coordination_v2.png
     - assets/models/body_tab.glb
     - assets/category_muscles/
     - assets/sounds/rest_complete.wav

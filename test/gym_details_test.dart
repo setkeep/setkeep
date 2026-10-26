@@ -247,7 +247,7 @@ void main() {
       await TrainingPlacePreference.save(const TrainingPlace.store(storeB));
       await open(t, const RegisteredGymsPage());
       expect(
-        t.getTopLeft(find.text(storeB.displayName)).dy,
+        t.getTopLeft(find.byKey(const Key('preferredTrainingPlaceCard'))).dy,
         lessThan(t.getTopLeft(find.text('自宅')).dy),
       );
       expect(

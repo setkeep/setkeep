@@ -35,13 +35,34 @@ object RestTimerState {
         deadlineTask = null
     }
 
+    fun exactAlarmAllowed(c: Context): Boolean =
+        Build.VERSION.SDK_INT < Build.VERSION_CODES.S || alarm(c).canScheduleExactAlarms()
+
+    fun refreshDeadline(c: Context) {
+        val p = prefs(c)
+        val id = p.getString("timerId", null) ?: return
+        val deadline = p.getLong("deadline", 0)
+        if (deadline > 0) armDeadline(c, id, deadline)
+    }
+
     private fun armDeadline(c: Context, id: String, deadline: Long) {
         clearDeadlineTask()
         if (deadline <= System.currentTimeMillis()) {
             completeIfDue(c, id, deadline, "schedule_due")
             return
         }
-        alarm(c).setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, deadline, alarmIntent(c, id, deadline))
+        val pending = alarmIntent(c, id, deadline)
+        var exact = exactAlarmAllowed(c)
+        if (exact) {
+            try {
+                alarm(c).setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, deadline, pending)
+            } catch (_: SecurityException) {
+                // Permission can be revoked between the check and scheduling.
+                exact = false
+            }
+        }
+        if (!exact) alarm(c).setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, deadline, pending)
+        RestTimerDiagnostics.set("alarmSchedulingMode", if (exact) "exact" else "inexact_permission_required")
         // One deadline callback, not a per-second notification update. AlarmManager
         // remains the background/process-death fallback; both enter the same claim.
         deadlineTask = object : Runnable {
@@ -188,7 +209,7 @@ object RestTimerState {
         val pending = WorkoutNotificationState.pending(c)
         val target = listOf("sessionId", "exerciseInstanceId", "previousSetId", "targetSetId", "exerciseName", "setNumber")
             .associateWith { pending?.optString(it) ?: "" }
-        return mapOf("target" to target, "timerId" to (p.getString("timerId", "") ?: ""),
+        return mapOf("exactAlarmAllowed" to exactAlarmAllowed(c), "target" to target, "timerId" to (p.getString("timerId", "") ?: ""),
             "phase" to (if (p.getBoolean("paused", false) && p.getString("timerId", null) != null) "paused"
                         else if (deadline > 0) "running" else "finished"),
             "lastCompletionTimerId" to (p.getString("lastCompletionTimerId", "") ?: ""),
@@ -225,19 +246,22 @@ object RestTimerState {
             val layout = RemoteViews(c.packageName, if (expanded) R.layout.rest_notification_expanded else R.layout.rest_notification_compact)
             val paused = pausedRemaining > 0
             val running = !paused && deadline > System.currentTimeMillis()
-            layout.setViewVisibility(R.id.rest_clock, if (running) View.VISIBLE else View.GONE)
-            layout.setViewVisibility(R.id.rest_zero, if (running) View.GONE else View.VISIBLE)
+            val countdown = running && exactAlarmAllowed(c)
+            layout.setViewVisibility(R.id.rest_clock, if (countdown) View.VISIBLE else View.GONE)
+            layout.setViewVisibility(R.id.rest_zero, if (countdown) View.GONE else View.VISIBLE)
+            if (running && !countdown) layout.setTextViewText(R.id.rest_zero,
+                android.text.format.DateFormat.format("HH:mm:ss", deadline))
             if (paused) layout.setTextViewText(R.id.rest_zero,
                 "%02d:%02d".format(pausedRemaining / 60, pausedRemaining % 60))
             layout.setChronometer(R.id.rest_clock,
-                SystemClock.elapsedRealtime() + (deadline - System.currentTimeMillis()).coerceAtLeast(0), null, running)
+                SystemClock.elapsedRealtime() + (deadline - System.currentTimeMillis()).coerceAtLeast(0), null, countdown)
             layout.setChronometerCountDown(R.id.rest_clock, true)
             val detail = target?.optString("exerciseName")?.takeIf { it.isNotBlank() } ?: name
             val number = target?.optString("setNumber")?.takeIf { it.isNotBlank() }
             layout.setTextViewText(R.id.rest_detail, detail)
             layout.setTextViewText(R.id.rest_next, number?.let { if (expanded) "次：${it}セット目" else "次：$it" } ?: "休憩")
             if (expanded) layout.setTextViewText(R.id.rest_label,
-                if (paused) "一時停止中" else if (running) "休憩タイマー" else "休憩終了")
+                if (paused) "一時停止中" else if (running && !countdown) "終了予定（通知が遅れる場合があります）" else if (running) "休憩タイマー" else "休憩終了")
             else {
                 layout.setViewVisibility(R.id.rest_complete, if (complete == null) View.GONE else View.VISIBLE)
                 if (complete != null) layout.setOnClickPendingIntent(R.id.rest_complete, complete)
@@ -280,7 +304,7 @@ object RestTimerState {
             .setContentText("${if (paused) "残り" else "残り時間"} · ${p.getString("exerciseName", "")}").setContentIntent(open)
             .setStyle(Notification.BigTextStyle().bigText("休憩タイマー — 残り時間\n${p.getString("exerciseName", "")}"))
             .setCategory(Notification.CATEGORY_STATUS).setVisibility(Notification.VISIBILITY_PUBLIC)
-            .setOngoing(true).setOnlyAlertOnce(true).setWhen(deadline).setShowWhen(!paused).setUsesChronometer(!paused)
+            .setOngoing(true).setOnlyAlertOnce(true).setWhen(deadline).setShowWhen(!paused).setUsesChronometer(!paused && exactAlarmAllowed(c))
             .addAction(Notification.Action.Builder(null, if (paused) "再開" else "一時停止",
                 actionIntent(if (paused) RESUME else PAUSE, 7343)).build())
             .addAction(Notification.Action.Builder(null, "+30秒", actionIntent(EXTEND, 7344)).build())
@@ -289,8 +313,12 @@ object RestTimerState {
         val complete = target?.let { completeIntent(c, id, it) }
         if (complete != null) builder.addAction(Notification.Action.Builder(null, "セット完了", complete).build())
         timerLayout(c, builder, deadline, target, complete, p.getString("exerciseName", "") ?: "", pausedRemaining)
-        if (Build.VERSION.SDK_INT >= 24 && !paused) builder.setChronometerCountDown(true)
-        // No timeout: completion replaces this same slot with the set action.
+        if (Build.VERSION.SDK_INT >= 24 && !paused && exactAlarmAllowed(c)) builder.setChronometerCountDown(true)
+        // SystemUI must never continue through zero into a negative timer.
+        // Completion independently posts the ready/action notification.
+        if (Build.VERSION.SDK_INT >= 26 && !paused) {
+            builder.setTimeoutAfter((deadline - System.currentTimeMillis()).coerceAtLeast(1))
+        }
         try { manager(c).notify(ONGOING, builder.build()) } catch (_: SecurityException) { }
     }
     fun readyNotification(c: Context, id: String, alert: Boolean = false): Notification? {

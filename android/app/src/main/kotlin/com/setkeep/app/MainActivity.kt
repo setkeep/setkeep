@@ -145,6 +145,15 @@ class MainActivity : FlutterActivity() {
                                 "delivered" to (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).activeNotifications.map { it.id }))
                         }
                     }
+                    "requestExactAlarmPermission" -> {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !RestTimerState.exactAlarmAllowed(this)) {
+                            try {
+                                startActivity(Intent(android.provider.Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM,
+                                    android.net.Uri.parse("package:$packageName")))
+                                result.success(true)
+                            } catch (_: android.content.ActivityNotFoundException) { result.success(false) }
+                        } else result.success(true)
+                    }
                     "schedule" -> {
                         val seconds = call.argument<Int>("seconds") ?: 1
                         requestNotificationPermission()
@@ -214,6 +223,7 @@ class MainActivity : FlutterActivity() {
     override fun onResume() {
         super.onResume()
         RestTimerFeedback.foreground = true
+        RestTimerState.refreshDeadline(this)
         RestTimerState.show(this)
     }
 

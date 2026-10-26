@@ -98,6 +98,11 @@ void main() {
       'debugStatus',
     ))!;
     expect(after['completionCount'], (before['completionCount'] ?? 0) + 1);
+    // The running notification timeout must not remove the replacement action.
+    expect(after['delivered'], contains(7340));
+    final ready = (after['ongoingDetails'] as List).single as Map;
+    expect(ready['chronometer'], false);
+    expect(ready['actions'], ['セット完了']);
     await AndroidWorkoutDraft.clear();
   });
 
@@ -359,10 +364,24 @@ void main() {
       await Future<void>.delayed(const Duration(milliseconds: 500));
       await t.pumpAndSettle();
       expect((await draft())['exercises'][0]['sets'][1]['completed'], true);
+      // Current completion policy requires every displayed weight set checked.
+      expect(
+        t
+            .widget<OutlinedButton>(
+              find.byKey(const Key('completeWorkoutButton')),
+            )
+            .onPressed,
+        isNull,
+      );
+      final last = find.byKey(const Key('toggleSet0_3'));
+      await t.ensureVisible(last);
+      await t.pumpAndSettle();
+      await t.tap(last);
+      await t.pumpAndSettle();
       await t.tap(find.byKey(const Key('completeWorkoutButton')));
       await t.pumpAndSettle();
       expect(result, isNotNull);
-      expect(result!.sets.length, 2);
+      expect(result!.sets.length, 3);
       expect(result!.sets.last.weight, 80.5);
       expect(await AndroidWorkoutDraft.read(), isNull);
       await t.pumpWidget(const SizedBox());
