@@ -246,22 +246,22 @@ object RestTimerState {
             val layout = RemoteViews(c.packageName, if (expanded) R.layout.rest_notification_expanded else R.layout.rest_notification_compact)
             val paused = pausedRemaining > 0
             val running = !paused && deadline > System.currentTimeMillis()
-            val countdown = running && exactAlarmAllowed(c)
+            // Display is driven by SystemUI, independently of permission to wake
+            // this process. Never substitute a wall-clock time for a duration.
+            val countdown = running
             layout.setViewVisibility(R.id.rest_clock, if (countdown) View.VISIBLE else View.GONE)
             layout.setViewVisibility(R.id.rest_zero, if (countdown) View.GONE else View.VISIBLE)
-            if (running && !countdown) layout.setTextViewText(R.id.rest_zero,
-                android.text.format.DateFormat.format("HH:mm:ss", deadline))
             if (paused) layout.setTextViewText(R.id.rest_zero,
                 "%02d:%02d".format(pausedRemaining / 60, pausedRemaining % 60))
+            layout.setChronometerCountDown(R.id.rest_clock, true)
             layout.setChronometer(R.id.rest_clock,
                 SystemClock.elapsedRealtime() + (deadline - System.currentTimeMillis()).coerceAtLeast(0), null, countdown)
-            layout.setChronometerCountDown(R.id.rest_clock, true)
             val detail = target?.optString("exerciseName")?.takeIf { it.isNotBlank() } ?: name
             val number = target?.optString("setNumber")?.takeIf { it.isNotBlank() }
             layout.setTextViewText(R.id.rest_detail, detail)
             layout.setTextViewText(R.id.rest_next, number?.let { if (expanded) "次：${it}セット目" else "次：$it" } ?: "休憩")
             if (expanded) layout.setTextViewText(R.id.rest_label,
-                if (paused) "一時停止中" else if (running && !countdown) "終了予定（通知が遅れる場合があります）" else if (running) "休憩タイマー" else "休憩終了")
+                if (paused) "一時停止中" else if (running) "休憩タイマー" else "休憩終了")
             else {
                 layout.setViewVisibility(R.id.rest_complete, if (complete == null) View.GONE else View.VISIBLE)
                 if (complete != null) layout.setOnClickPendingIntent(R.id.rest_complete, complete)
@@ -304,7 +304,9 @@ object RestTimerState {
             .setContentText("${if (paused) "残り" else "残り時間"} · ${p.getString("exerciseName", "")}").setContentIntent(open)
             .setStyle(Notification.BigTextStyle().bigText("休憩タイマー — 残り時間\n${p.getString("exerciseName", "")}"))
             .setCategory(Notification.CATEGORY_STATUS).setVisibility(Notification.VISIBILITY_PUBLIC)
-            .setOngoing(true).setOnlyAlertOnce(true).setWhen(deadline).setShowWhen(!paused).setUsesChronometer(!paused && exactAlarmAllowed(c))
+            .setOngoing(true).setOnlyAlertOnce(true).setWhen(deadline)
+            .setShowWhen(!paused && Build.VERSION.SDK_INT >= 24)
+            .setUsesChronometer(!paused && Build.VERSION.SDK_INT >= 24)
             .addAction(Notification.Action.Builder(null, if (paused) "再開" else "一時停止",
                 actionIntent(if (paused) RESUME else PAUSE, 7343)).build())
             .addAction(Notification.Action.Builder(null, "+30秒", actionIntent(EXTEND, 7344)).build())
@@ -313,7 +315,7 @@ object RestTimerState {
         val complete = target?.let { completeIntent(c, id, it) }
         if (complete != null) builder.addAction(Notification.Action.Builder(null, "セット完了", complete).build())
         timerLayout(c, builder, deadline, target, complete, p.getString("exerciseName", "") ?: "", pausedRemaining)
-        if (Build.VERSION.SDK_INT >= 24 && !paused && exactAlarmAllowed(c)) builder.setChronometerCountDown(true)
+        if (Build.VERSION.SDK_INT >= 24 && !paused) builder.setChronometerCountDown(true)
         // SystemUI must never continue through zero into a negative timer.
         // Completion independently posts the ready/action notification.
         if (Build.VERSION.SDK_INT >= 26 && !paused) {
