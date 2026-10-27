@@ -625,7 +625,8 @@ Set<ExerciseFormDefinition> availableForms(Iterable<String> ids) => ids
     .where((f) => f.selectable)
     .toSet();
 
-class _GymStoreEquipmentPageState extends State<GymStoreEquipmentPage> {
+class _GymStoreEquipmentPageState extends State<GymStoreEquipmentPage>
+    with WidgetsBindingObserver {
   final _repo = GymServices.repository;
   GymStoreDetail? _detail;
   Set<String> _pending = {};
@@ -636,7 +637,23 @@ class _GymStoreEquipmentPageState extends State<GymStoreEquipmentPage> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _load();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      // Approvals and connectivity may change while this page stays open.
+      // Keep existing rows until the refreshed response succeeds.
+      unawaited(_load(force: true));
+    }
   }
 
   Future<void> _load({bool force = false}) async {
@@ -645,9 +662,9 @@ class _GymStoreEquipmentPageState extends State<GymStoreEquipmentPage> {
       _busy = true;
       _failed = false;
     });
-    final cached = await GymEquipmentCache.read(widget.store.id);
+    final cached = force ? null : await GymEquipmentCache.read(widget.store.id);
     if (!mounted || request != _request) return;
-    if (cached != null && !force) setState(() => _detail = cached.detail);
+    if (cached != null) setState(() => _detail = cached.detail);
     try {
       final detail = await _repo.detail(widget.store);
       if (!mounted || request != _request) return;

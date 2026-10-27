@@ -126,11 +126,31 @@ class MainActivity : FlutterActivity() {
                             result.notImplemented()
                         } else {
                             val p = getSharedPreferences("rest_timer", MODE_PRIVATE)
+                            fun display(views: android.widget.RemoteViews?): Map<String, Any> {
+                                if (views == null) return emptyMap()
+                                val view = views.apply(this, android.widget.FrameLayout(this))
+                                val clock = view.findViewById<android.widget.Chronometer>(R.id.rest_clock)
+                                val fallback = view.findViewById<android.widget.TextView>(R.id.rest_zero)
+                                return mapOf(
+                                    "clockVisible" to (clock.visibility == android.view.View.VISIBLE),
+                                    "clockText" to clock.text.toString(),
+                                    "baseRemainingMs" to (clock.base - android.os.SystemClock.elapsedRealtime()),
+                                    "countdown" to clock.isCountDown,
+                                    "fallbackVisible" to (fallback.visibility == android.view.View.VISIBLE),
+                                    "fallbackText" to fallback.text.toString()
+                                )
+                            }
                             result.success(RestTimerDiagnostics.snapshot() + RestTimerFeedback.status(this) + mapOf(
                                 "keyguardLocked" to (getSystemService(Context.KEYGUARD_SERVICE) as android.app.KeyguardManager).isKeyguardLocked,
                                 "ongoingDetails" to (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).activeNotifications
                                     .filter { it.id == RestTimerState.ONGOING }.map { n -> mapOf(
                                         "actions" to (n.notification.actions?.map { it.title.toString() } ?: emptyList<String>()),
+                                        "when" to n.notification.`when`,
+                                        "showWhen" to n.notification.extras.getBoolean(android.app.Notification.EXTRA_SHOW_WHEN),
+                                        "timeoutAfter" to (if (Build.VERSION.SDK_INT >= 26) n.notification.timeoutAfter else 0L),
+                                        "compact" to display(n.notification.contentView),
+                                        "expanded" to display(n.notification.bigContentView),
+                                        "headsUp" to display(n.notification.headsUpContentView),
                                         "chronometer" to n.notification.extras.getBoolean(android.app.Notification.EXTRA_SHOW_CHRONOMETER),
                                         "countdown" to n.notification.extras.getBoolean("android.chronometerCountDown"),
                                         "requestedPromotion" to n.notification.extras.getBoolean("android.requestPromotedOngoing"),
