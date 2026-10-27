@@ -18,7 +18,10 @@ import 'friends/history_workout_likes.dart';
 import 'friends/friend_like_inbox.dart';
 import 'friends/friend_like_inbox_page.dart';
 import 'ads/ads_config.dart';
+import 'ads/ads_consent_startup.dart';
+import 'ads/ads_consent.dart';
 import 'ads/setkeep_banner_ad.dart';
+import 'ads/ads_privacy_tile.dart';
 import 'ads/workout_interstitial.dart';
 import 'trainer/trainer_inbox_repository.dart';
 import 'friends/friend_comment_inbox.dart';
@@ -448,10 +451,16 @@ class WorkoutUiPreference {
 }
 
 class SetkeepApp extends StatelessWidget {
-  const SetkeepApp({super.key, this.showStartup = false, this.auth});
+  const SetkeepApp({
+    super.key,
+    this.showStartup = false,
+    this.auth,
+    this.adsConsent,
+  });
 
   final bool showStartup;
   final AccountAuthService? auth;
+  final AdsConsent? adsConsent;
 
   @override
   Widget build(BuildContext context) {
@@ -472,16 +481,17 @@ class SetkeepApp extends StatelessWidget {
       theme: familyTheme(),
       navigatorObservers: [exerciseMediaRouteObserver],
       home: showStartup
-          ? _SetkeepStartup(auth: auth)
-          : _OnboardingGate(auth: auth),
+          ? _SetkeepStartup(auth: auth, adsConsent: adsConsent)
+          : _OnboardingGate(auth: auth, adsConsent: adsConsent),
     );
   }
 }
 
 class _SetkeepStartup extends StatelessWidget {
-  const _SetkeepStartup({this.auth});
+  const _SetkeepStartup({this.auth, this.adsConsent});
 
   final AccountAuthService? auth;
+  final AdsConsent? adsConsent;
 
   @override
   Widget build(
@@ -514,6 +524,7 @@ class _SetkeepStartup extends StatelessWidget {
       onboarded: result.onboarded,
       consented: result.consented,
       auth: auth,
+      adsConsent: adsConsent,
     ),
   );
 }
@@ -523,11 +534,13 @@ class _SetkeepInitialScreen extends StatefulWidget {
     required this.onboarded,
     required this.consented,
     this.auth,
+    this.adsConsent,
   });
 
   final bool onboarded;
   final bool consented;
   final AccountAuthService? auth;
+  final AdsConsent? adsConsent;
 
   @override
   State<_SetkeepInitialScreen> createState() => _SetkeepInitialScreenState();
@@ -549,7 +562,10 @@ class _SetkeepInitialScreenState extends State<_SetkeepInitialScreen> {
         onFinished: () => setState(() => _consented = true),
       );
     }
-    return _RequiredAccountGate(auth: widget.auth);
+    return AdsConsentStartup(
+      consent: widget.adsConsent,
+      child: _RequiredAccountGate(auth: widget.auth),
+    );
   }
 }
 
@@ -627,9 +643,10 @@ class LegalConsentPreference {
 }
 
 class _LegalConsentGate extends StatefulWidget {
-  const _LegalConsentGate({this.auth});
+  const _LegalConsentGate({this.auth, this.adsConsent});
 
   final AccountAuthService? auth;
+  final AdsConsent? adsConsent;
 
   @override
   State<_LegalConsentGate> createState() => _LegalConsentGateState();
@@ -641,7 +658,12 @@ class _LegalConsentGateState extends State<_LegalConsentGate> {
 
   @override
   Widget build(BuildContext context) {
-    if (_finished) return _RequiredAccountGate(auth: widget.auth);
+    if (_finished) {
+      return AdsConsentStartup(
+        consent: widget.adsConsent,
+        child: _RequiredAccountGate(auth: widget.auth),
+      );
+    }
     return FutureBuilder<bool>(
       future: _accepted,
       builder: (context, snapshot) {
@@ -651,7 +673,10 @@ class _LegalConsentGateState extends State<_LegalConsentGate> {
           );
         }
         if (snapshot.data == true) {
-          return _RequiredAccountGate(auth: widget.auth);
+          return AdsConsentStartup(
+            consent: widget.adsConsent,
+            child: _RequiredAccountGate(auth: widget.auth),
+          );
         }
         return _LegalConsentPage(
           onFinished: () => setState(() => _finished = true),
@@ -786,9 +811,10 @@ class _LegalConsentPageState extends State<_LegalConsentPage> {
 }
 
 class _OnboardingGate extends StatefulWidget {
-  const _OnboardingGate({this.auth});
+  const _OnboardingGate({this.auth, this.adsConsent});
 
   final AccountAuthService? auth;
+  final AdsConsent? adsConsent;
 
   @override
   State<_OnboardingGate> createState() => _OnboardingGateState();
@@ -800,7 +826,12 @@ class _OnboardingGateState extends State<_OnboardingGate> {
 
   @override
   Widget build(BuildContext context) {
-    if (_finished) return _LegalConsentGate(auth: widget.auth);
+    if (_finished) {
+      return _LegalConsentGate(
+        auth: widget.auth,
+        adsConsent: widget.adsConsent,
+      );
+    }
     return FutureBuilder<bool>(
       future: _completed,
       builder: (context, snapshot) {
@@ -809,7 +840,12 @@ class _OnboardingGateState extends State<_OnboardingGate> {
             body: Center(child: CircularProgressIndicator()),
           );
         }
-        if (snapshot.data == true) return _LegalConsentGate(auth: widget.auth);
+        if (snapshot.data == true) {
+          return _LegalConsentGate(
+            auth: widget.auth,
+            adsConsent: widget.adsConsent,
+          );
+        }
         return _OnboardingPage(
           onFinished: () => setState(() => _finished = true),
         );
@@ -12582,6 +12618,7 @@ class ProfilePage extends StatelessWidget {
             ),
             child: Column(
               children: [
+                const AdsPrivacyTile(),
                 ListTile(
                   key: const Key('contactButton'),
                   leading: const Icon(Icons.support_agent_rounded),

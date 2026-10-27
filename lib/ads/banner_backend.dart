@@ -5,6 +5,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 
+import 'ads_consent.dart';
+
 class BannerRequest {
   bool cancelled = false;
   VoidCallback? onCancel;
@@ -29,21 +31,8 @@ abstract class BannerBackend {
 
 class GoogleBannerBackend implements BannerBackend {
   static final instance = GoogleBannerBackend();
-  Future<bool>? _ready;
   @override
   bool get supported => !kIsWeb && (Platform.isAndroid || Platform.isIOS);
-
-  Future<bool> _initialize() async {
-    try {
-      await MobileAds.instance.initialize().timeout(
-        const Duration(seconds: 10),
-      );
-      await MobileAds.instance.setAppMuted(true);
-      return true;
-    } catch (_) {
-      return false;
-    }
-  }
 
   @override
   Future<BannerHandle?> load(
@@ -51,19 +40,29 @@ class GoogleBannerBackend implements BannerBackend {
     String unitId,
     BannerRequest request,
   ) async {
-    if (!supported || request.cancelled) return null;
-    if (!await (_ready ??= _initialize().timeout(
+    if (!supported || request.cancelled) {
+      return null;
+    }
+    final consentRevision = AdsConsent.instance.revision;
+    if (!await AdsConsent.instance.ready().timeout(
           const Duration(seconds: 12),
           onTimeout: () => false,
-        )) ||
-        request.cancelled) {
+        ) ||
+        request.cancelled ||
+        AdsConsent.instance.requestsBlocked ||
+        AdsConsent.instance.revision != consentRevision) {
       return null;
     }
     _GoogleBanner? handle;
     try {
       final size = await AdSize.getLargeAnchoredAdaptiveBannerAdSize(width)
           .timeout(const Duration(seconds: 5));
-      if (size == null || request.cancelled) return null;
+      if (size == null ||
+          request.cancelled ||
+          AdsConsent.instance.requestsBlocked ||
+          AdsConsent.instance.revision != consentRevision) {
+        return null;
+      }
       final result = Completer<BannerHandle?>();
       void finish(BannerHandle? value) {
         if (!result.isCompleted) result.complete(value);
@@ -74,7 +73,16 @@ class GoogleBannerBackend implements BannerBackend {
         adUnitId: unitId,
         request: const AdRequest(nonPersonalizedAds: true),
         listener: BannerAdListener(
-          onAdLoaded: (_) => finish(request.cancelled ? null : handle),
+          onAdLoaded: (_) {
+            if (request.cancelled ||
+                AdsConsent.instance.requestsBlocked ||
+                AdsConsent.instance.revision != consentRevision) {
+              handle?.dispose();
+              finish(null);
+            } else {
+              finish(handle);
+            }
+          },
           onAdFailedToLoad: (_, error) {
             if (kDebugMode) {
               debugPrint('Test banner unavailable (${error.code})');

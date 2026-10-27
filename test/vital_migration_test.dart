@@ -85,8 +85,16 @@ void main() {
           ExerciseMediaCatalog.forExerciseId(id)?.provider,
           'setkeep_original',
         );
+      } else if (id == 'weighted_back_extension') {
+        // This legacy ID was merged into the normal weighted-recordable
+        // exercise; it now shares the already purchased canonical guide.
+        expect(ExerciseFormCatalog.canonicalId(id), 'back_extension');
+        expect(
+          ExerciseMediaCatalog.forExerciseId(id),
+          same(ExerciseMediaCatalog.forExerciseId('back_extension')),
+        );
       } else {
-        expect(ExerciseMediaCatalog.forExerciseId(id), isNull);
+        expect(ExerciseMediaCatalog.forExerciseId(id), isNull, reason: id);
       }
     }
     for (final id in ['dy_row', 'low_row', 'linear_row', 'high_row']) {

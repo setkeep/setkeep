@@ -7,6 +7,7 @@ import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'ads_config.dart';
+import 'ads_consent.dart';
 
 /// Interstitial frequency is based on an actual display in the local calendar
 /// day. The former completed-workout counter is intentionally ignored.
@@ -52,10 +53,15 @@ class GoogleInterstitialBackend implements InterstitialBackend {
   Future<InterstitialHandle?> load(String unitId) async {
     if (!supported) return null;
     try {
-      await MobileAds.instance.initialize().timeout(
-        const Duration(seconds: 10),
-      );
-      await MobileAds.instance.setAppMuted(true);
+      final consentRevision = AdsConsent.instance.revision;
+      if (!await AdsConsent.instance.ready().timeout(
+            const Duration(seconds: 12),
+            onTimeout: () => false,
+          ) ||
+          AdsConsent.instance.requestsBlocked ||
+          AdsConsent.instance.revision != consentRevision) {
+        return null;
+      }
       final result = Completer<InterstitialHandle?>();
       var expired = false;
       InterstitialAd.load(
@@ -63,8 +69,12 @@ class GoogleInterstitialBackend implements InterstitialBackend {
         request: const AdRequest(nonPersonalizedAds: true),
         adLoadCallback: InterstitialAdLoadCallback(
           onAdLoaded: (ad) {
-            if (expired || result.isCompleted) {
+            if (expired ||
+                result.isCompleted ||
+                AdsConsent.instance.requestsBlocked ||
+                AdsConsent.instance.revision != consentRevision) {
               unawaited(ad.dispose().catchError((Object _) {}));
+              if (!result.isCompleted) result.complete(null);
             } else {
               result.complete(_GoogleInterstitialHandle(ad));
             }
@@ -97,6 +107,15 @@ class _GoogleInterstitialHandle implements InterstitialHandle {
 
   @override
   Future<bool> show({required Future<void> Function() onShown}) async {
+    final consentRevision = AdsConsent.instance.revision;
+    if (_disposed ||
+        !await AdsConsent.instance.ready() ||
+        _disposed ||
+        AdsConsent.instance.requestsBlocked ||
+        AdsConsent.instance.revision != consentRevision) {
+      dispose();
+      return false;
+    }
     final finished = Completer<bool>();
     var shown = false;
     Future<void>? recording;
@@ -141,20 +160,26 @@ class WorkoutInterstitialSession with WidgetsBindingObserver {
     this._unitId,
     this._preferences,
     this._policy,
+    this._consent,
+    this._now,
   ) {
     final state = WidgetsBinding.instance.lifecycleState;
     _foreground = state == null || state == AppLifecycleState.resumed;
     _entitlement.addListener(_onEntitlement);
+    _consent.addListener(_onConsent);
     WidgetsBinding.instance.addObserver(this);
   }
 
   static const loadWaitBeforeNavigation = Duration(seconds: 1);
+  static const maxPreloadAge = Duration(minutes: 55);
 
   final AdsEntitlement _entitlement;
   final InterstitialBackend _backend;
   final String _unitId;
   final SharedPreferences _preferences;
   final WorkoutInterstitialPolicy _policy;
+  final AdsConsent _consent;
+  final DateTime Function() _now;
   InterstitialHandle? _ad;
   Future<InterstitialHandle?>? _loadFuture;
   bool _disposed = false;
@@ -171,6 +196,8 @@ class WorkoutInterstitialSession with WidgetsBindingObserver {
     InterstitialBackend? backend,
     SharedPreferences? preferences,
     WorkoutInterstitialPolicy policy = const WorkoutInterstitialPolicy(),
+    AdsConsent? consent,
+    DateTime Function()? now,
   }) async {
     final id = config.interstitialId(platform);
     final resolvedBackend = backend ?? GoogleInterstitialBackend.instance;
@@ -178,23 +205,32 @@ class WorkoutInterstitialSession with WidgetsBindingObserver {
       return null;
     }
     final prefs = preferences ?? await SharedPreferences.getInstance();
-    if (!await policy.canShow(prefs)) return null;
+    if (!await policy.canShow(prefs)) {
+      return null;
+    }
     final session = WorkoutInterstitialSession._(
       entitlement,
       resolvedBackend,
       id,
       prefs,
       policy,
+      consent ?? AdsConsent.instance,
+      now ?? DateTime.now,
     );
     session.preload();
     return session;
   }
 
   void preload() {
-    if (_disposed || _attempted || _entitlement.adFree || !_foreground) return;
+    if (_disposed ||
+        _attempted ||
+        _entitlement.adFree ||
+        !_foreground ||
+        _consent.requestsBlocked) {
+      return;
+    }
     // Native ads expire; a long workout must not retain a stale preload.
-    if (_loadedAt != null &&
-        DateTime.now().difference(_loadedAt!) >= const Duration(minutes: 55)) {
+    if (_loadedAt != null && _now().difference(_loadedAt!) >= maxPreloadAge) {
       _discardPreload();
     }
     _loadFuture ??= _load(++_loadGeneration);
@@ -213,13 +249,14 @@ class WorkoutInterstitialSession with WidgetsBindingObserver {
       final ad = await _backend.load(_unitId);
       if (_disposed ||
           _entitlement.adFree ||
+          _consent.requestsBlocked ||
           !_foreground ||
           generation != _loadGeneration) {
         ad?.dispose();
         return null;
       }
       _ad = ad;
-      _loadedAt = ad == null ? null : DateTime.now();
+      _loadedAt = ad == null ? null : _now();
       if (ad == null) _loadFuture = null;
       return ad;
     } catch (_) {
@@ -230,8 +267,12 @@ class WorkoutInterstitialSession with WidgetsBindingObserver {
 
   Future<void> tryShow() async {
     if (_attempted || _disposed) return;
+    if (_loadedAt != null && _now().difference(_loadedAt!) >= maxPreloadAge) {
+      _discardPreload();
+      preload();
+    }
     _attempted = true;
-    if (_entitlement.adFree || !_foreground) return;
+    if (_entitlement.adFree || !_foreground || _consent.requestsBlocked) return;
     if (!await _policy.canShow(_preferences)) return;
 
     var ad = _ad;
@@ -248,7 +289,11 @@ class WorkoutInterstitialSession with WidgetsBindingObserver {
         }
       }
     }
-    if (ad == null || _disposed || _entitlement.adFree || !_foreground) {
+    if (ad == null ||
+        _disposed ||
+        _entitlement.adFree ||
+        !_foreground ||
+        _consent.requestsBlocked) {
       ad?.dispose();
       final loading = _loadFuture;
       if (ad == null && loading != null) {
@@ -283,6 +328,14 @@ class WorkoutInterstitialSession with WidgetsBindingObserver {
     }
   }
 
+  void _onConsent() {
+    if (_consent.requestsBlocked) {
+      _discardPreload();
+    } else {
+      preload();
+    }
+  }
+
   void _onEntitlement() {
     if (_entitlement.adFree) {
       _discardPreload();
@@ -303,6 +356,7 @@ class WorkoutInterstitialSession with WidgetsBindingObserver {
     if (_disposed) return;
     _disposed = true;
     _entitlement.removeListener(_onEntitlement);
+    _consent.removeListener(_onConsent);
     WidgetsBinding.instance.removeObserver(this);
     _ad?.dispose();
     _ad = null;

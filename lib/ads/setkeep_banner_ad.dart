@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'ads_config.dart';
+import 'ads_consent.dart';
 import 'banner_backend.dart';
 import 'workout_interstitial.dart';
 
@@ -30,19 +31,23 @@ class AdsScope extends InheritedWidget {
 }
 
 class SetkeepBannerAd extends StatefulWidget {
-  const SetkeepBannerAd({super.key});
+  const SetkeepBannerAd({super.key, this.consent});
+  final AdsConsent? consent;
   @override
   State<SetkeepBannerAd> createState() => _SetkeepBannerAdState();
 }
 
 class _SetkeepBannerAdState extends State<SetkeepBannerAd>
     with WidgetsBindingObserver {
+  late AdsConsent _consent;
   bool _foreground = true;
   int _lifecycleRevision = 0;
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _consent = widget.consent ?? AdsConsent.instance;
+    _consent.addListener(_onConsent);
     final state = WidgetsBinding.instance.lifecycleState;
     _foreground = state == null || state == AppLifecycleState.resumed;
   }
@@ -58,8 +63,25 @@ class _SetkeepBannerAdState extends State<SetkeepBannerAd>
   }
 
   @override
+  void didUpdateWidget(SetkeepBannerAd oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final next = widget.consent ?? AdsConsent.instance;
+    if (!identical(next, _consent)) {
+      _consent.removeListener(_onConsent);
+      _consent = next;
+      _consent.addListener(_onConsent);
+      _lifecycleRevision++;
+    }
+  }
+
+  void _onConsent() {
+    if (mounted) setState(() {});
+  }
+
+  @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _consent.removeListener(_onConsent);
     super.dispose();
   }
 
@@ -69,7 +91,8 @@ class _SetkeepBannerAdState extends State<SetkeepBannerAd>
     final platform = Theme.of(context).platform;
     final id = scope?.config.bannerId(platform);
     final backend = scope?.backend ?? GoogleBannerBackend.instance;
-    if (scope == null ||
+    if (_consent.requestsBlocked ||
+        scope == null ||
         id == null ||
         !backend.supported ||
         !_foreground ||
@@ -96,6 +119,7 @@ class _SetkeepBannerAdState extends State<SetkeepBannerAd>
               return _BannerSlot(
                 key: ValueKey((
                   width,
+                  _consent.revision,
                   _lifecycleRevision,
                   MediaQuery.orientationOf(context),
                   backend,

@@ -5,6 +5,10 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:setkeep/ads/ads_config.dart';
+import 'package:setkeep/ads/ads_consent.dart';
+
+import 'support/ads_consent_backend.dart';
+
 import 'package:setkeep/ads/banner_backend.dart';
 import 'package:setkeep/ads/setkeep_banner_ad.dart';
 import 'package:setkeep/ads/workout_interstitial.dart';
@@ -62,12 +66,26 @@ class _FakeBackend implements InterstitialBackend {
   }
 }
 
+class _SequenceBackend implements InterstitialBackend {
+  final ads = <_FakeAd>[];
+  @override
+  bool get supported => true;
+  @override
+  Future<InterstitialHandle?> load(String unitId) async {
+    final ad = _FakeAd();
+    ads.add(ad);
+    return ad;
+  }
+}
+
 Future<WorkoutInterstitialSession?> _finish(
   AdsEntitlement entitlement,
-  _FakeBackend backend, {
+  InterstitialBackend backend, {
   AdsConfig config = const AdsConfig(generalApp: true),
   SharedPreferences? preferences,
   WorkoutInterstitialPolicy policy = const WorkoutInterstitialPolicy(),
+  AdsConsent? consent,
+  DateTime Function()? now,
 }) => WorkoutInterstitialSession.prepareForWorkoutCompletion(
   config: config,
   entitlement: entitlement,
@@ -75,6 +93,8 @@ Future<WorkoutInterstitialSession?> _finish(
   backend: backend,
   preferences: preferences,
   policy: policy,
+  consent: consent,
+  now: now,
 );
 
 String _draft() => jsonEncode({
@@ -464,4 +484,111 @@ void main() {
     expect(find.byType(DashboardPage), findsOneWidget);
     entitlement.dispose();
   });
+
+  testWidgets(
+    '55-minute expiration replaces an existing preload at the boundary',
+    (tester) async {
+      var now = DateTime(2026, 10, 27, 12);
+      final entitlement = AdsEntitlement();
+      final backend = _SequenceBackend();
+      final session = (await _finish(entitlement, backend, now: () => now))!;
+      await tester.pump();
+      now = now.add(const Duration(minutes: 54, seconds: 59));
+      session.preload();
+      await tester.pump();
+      expect(backend.ads, hasLength(1));
+      now = now.add(const Duration(seconds: 1));
+      session.preload();
+      await tester.pump();
+      expect(backend.ads, hasLength(2));
+      expect(backend.ads.first.disposals, 1);
+      await session.tryShow();
+      expect(backend.ads.first.shows, 0);
+      expect(backend.ads.last.shows, 1);
+      session.dispose();
+      entitlement.dispose();
+    },
+  );
+
+  testWidgets(
+    'a stale ad is replaced even when display is requested without preload',
+    (tester) async {
+      var now = DateTime(2026, 10, 27, 12);
+      final entitlement = AdsEntitlement();
+      final backend = _SequenceBackend();
+      final session = (await _finish(entitlement, backend, now: () => now))!;
+      await tester.pump();
+      now = now.add(const Duration(minutes: 55));
+      final show = session.tryShow();
+      await tester.pump();
+      await show;
+      expect(backend.ads, hasLength(2));
+      expect(backend.ads.first.shows, 0);
+      expect(backend.ads.first.disposals, 1);
+      expect(backend.ads.last.shows, 1);
+      session.dispose();
+      entitlement.dispose();
+    },
+  );
+
+  testWidgets(
+    'privacy form invalidates a pending generation and reloads only after closure',
+    (tester) async {
+      final consentBackend = FakeConsent()
+        ..pendingOptions = Completer<void>()
+        ..afterOptionsAllowed = true;
+      final consent = AdsConsent(consentBackend);
+      await consent.ready();
+      final entitlement = AdsEntitlement();
+      final backend = _FakeBackend(_FakeAd())..pending = true;
+      final session = (await _finish(entitlement, backend, consent: consent))!;
+      final oldLoad = backend.loading!;
+      final changing = consent.showOptions();
+      session.preload();
+      expect(backend.loads, 1);
+      final stale = _FakeAd();
+      oldLoad.complete(stale);
+      await tester.pump();
+      expect(stale.disposals, 1);
+      backend.pending = false;
+      consentBackend.pendingOptions!.complete();
+      await changing;
+      await tester.pump();
+      expect(backend.loads, 2);
+      await session.tryShow();
+      expect(stale.shows, 0);
+      expect(backend.ad.shows, 1);
+      session.dispose();
+      entitlement.dispose();
+      consent.dispose();
+    },
+  );
+
+  testWidgets(
+    'failed privacy options dispose preloaded ads and keep completion unblocked',
+    (tester) async {
+      final consentBackend = FakeConsent()..optionsFails = true;
+      final consent = AdsConsent(consentBackend);
+      await consent.ready();
+      final entitlement = AdsEntitlement();
+      final backend = _FakeBackend(_FakeAd());
+      final session = (await _finish(entitlement, backend, consent: consent))!;
+      await tester.pump();
+      await expectLater(consent.showOptions(), throwsStateError);
+      session.preload();
+      await session.tryShow();
+      expect(backend.loads, 1);
+      expect(backend.ad.disposals, 1);
+      expect(backend.ad.shows, 0);
+      expect(
+        (await SharedPreferences.getInstance()).getString(
+          WorkoutInterstitialPolicy.lastShownLocalDateKey,
+        ),
+        isNull,
+      );
+      session.dispose();
+      entitlement.dispose();
+      consent.dispose();
+    },
+  );
 }
