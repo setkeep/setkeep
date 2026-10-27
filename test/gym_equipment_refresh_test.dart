@@ -15,20 +15,18 @@ const store = GymStore(
   chainName: 'KANEKIN FITNESS GYM',
   name: '松戸店',
 );
-const cables = [
-  GymEquipment(
-    id: 'community-training:cable_crossover',
-    name: 'ケーブルクロスオーバー',
-    category: '利用者確認',
-    sourceKind: 'admin',
-  ),
-  GymEquipment(
-    id: 'community-training:dual_pulley',
-    name: 'デュアルアジャスタブルプーリー',
-    category: '利用者確認',
-    sourceKind: 'admin',
-  ),
+final cables = [
+  for (final entry in const {
+    'community-training:cable_crossover': 'ケーブルクロスオーバー',
+    'community-training:dual_pulley': 'デュアルアジャスタブルプーリー',
+  }.entries)
+    GymEquipment.fromJson({
+      'source_kind': 'admin',
+      'available': true,
+      'equipment': {'id': entry.key, 'name': entry.value, 'category': '利用者確認'},
+    }),
 ];
+
 final latest = GymStoreDetail(
   store: store,
   equipment: cables,
