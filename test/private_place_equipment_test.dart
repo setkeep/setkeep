@@ -15,6 +15,23 @@ class EquipmentRepo extends FakeGyms {
   final exerciseReports = <String>[];
   bool failReports = false;
   @override
+  Future<void> reportExercises({
+    required String storeId,
+    required String kind,
+    required Set<String> exerciseIds,
+    required String comment,
+  }) async {
+    for (final id in exerciseIds) {
+      await reportExercise(
+        storeId: storeId,
+        kind: kind,
+        exerciseId: id,
+        comment: comment,
+      );
+    }
+  }
+
+  @override
   Future<List<GymEquipment>> searchEquipment(
     String query, {
     int offset = 0,
@@ -520,6 +537,8 @@ void main() {
           );
           await t.pumpAndSettle();
           await t.tap(find.byKey(const Key('choosePlaceExercisebench_press')));
+          await t.pumpAndSettle();
+          await t.tap(find.byKey(const Key('confirmPlaceExercises')));
           await t.pumpAndSettle();
         }
         await t.enterText(

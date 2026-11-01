@@ -30,7 +30,7 @@ def main():
      sql('insert into public.equipment(id,name,normalized_name,category) values '+','.join("('%s','Synthetic seed','synthetic','qa')"%i for i in sorted(ids))+' on conflict do nothing;')
    sql((ROOT/'supabase/migrations/20261010230000_equipment_candidate_admin_actions.sql').read_text())
    print('PASS fresh local migration')
-   for name in ['gym_equipment_admin_review.sql','report_admin.sql','gym_places_details.sql','gym_change_candidates.sql','gym_auto_application.sql','gym_equipment_state_reports.sql','training_equipment_confirmation.sql','gym_official_sources.sql','gym_store_lifecycle.sql']:
+   for name in ['gym_equipment_admin_review.sql','report_admin.sql','private_place_equipment.sql','bulk_exercise_reports.sql','gym_places_details.sql','gym_change_candidates.sql','gym_auto_application.sql','gym_equipment_state_reports.sql','training_equipment_confirmation.sql','gym_official_sources.sql','gym_store_lifecycle.sql']:
     command(base+['-f',str(ROOT/'supabase/tests'/name)])
     print('PASS '+name)
    env=os.environ.copy();env.update(SETKEEP_REVIEW_PG_SOCKET=str(sock),SETKEEP_REVIEW_PG_PORT='55439',SETKEEP_REVIEW_PG_DB='postgres')

@@ -20,9 +20,21 @@ Future<String?> selectPlaceExercise(
   builder: (_) => _ExerciseChoice(allowed: allowed),
 );
 
+Future<Set<String>?> selectPlaceExercises(
+  BuildContext context, {
+  Set<String>? allowed,
+  Set<String> selected = const {},
+}) => showModalBottomSheet<Set<String>>(
+  context: context,
+  isScrollControlled: true,
+  useSafeArea: true,
+  builder: (_) => _ExerciseChoice(allowed: allowed, selected: selected),
+);
+
 class _ExerciseChoice extends StatefulWidget {
-  const _ExerciseChoice({this.allowed});
+  const _ExerciseChoice({this.allowed, this.selected});
   final Set<String>? allowed;
+  final Set<String>? selected;
   @override
   State<_ExerciseChoice> createState() => _ExerciseChoiceState();
 }
@@ -30,6 +42,8 @@ class _ExerciseChoice extends StatefulWidget {
 class _ExerciseChoiceState extends State<_ExerciseChoice> {
   String query = '';
   String? category;
+  late final selected = {...?widget.selected};
+  bool get multiple => widget.selected != null;
   @override
   Widget build(BuildContext context) {
     final source = availableForms(
@@ -55,7 +69,10 @@ class _ExerciseChoiceState extends State<_ExerciseChoice> {
         child: Column(
           children: [
             ListTile(
-              title: const Text('種目を選択'),
+              title: Text(multiple ? '対象種目を選択（${selected.length}件）' : '種目を選択'),
+              subtitle: multiple
+                  ? const Text('複数選択できます（1回$maxExerciseReportsPerBatch種目まで）')
+                  : null,
               trailing: IconButton(
                 tooltip: '閉じる',
                 icon: const Icon(Icons.close),
@@ -99,15 +116,60 @@ class _ExerciseChoiceState extends State<_ExerciseChoice> {
                       itemCount: forms.length,
                       itemBuilder: (context, index) {
                         final e = forms[index];
+                        final checked = selected.contains(e.exerciseId);
+                        final enabled =
+                            !multiple ||
+                            checked ||
+                            selected.length < maxExerciseReportsPerBatch;
+                        void choose() {
+                          if (!multiple) {
+                            Navigator.pop(context, e.exerciseId);
+                            return;
+                          }
+                          setState(() {
+                            if (!selected.remove(e.exerciseId)) {
+                              selected.add(e.exerciseId);
+                            }
+                          });
+                        }
+
                         return ListTile(
                           key: ValueKey('choosePlaceExercise${e.exerciseId}'),
                           title: Text(e.exerciseName),
                           subtitle: Text('${e.category} ・ ${e.equipmentLabel}'),
-                          onTap: () => Navigator.pop(context, e.exerciseId),
+                          enabled: enabled,
+                          trailing: multiple
+                              ? Checkbox(
+                                  value: checked,
+                                  onChanged: enabled ? (_) => choose() : null,
+                                )
+                              : null,
+                          onTap: enabled ? choose : null,
                         );
                       },
                     ),
             ),
+            if (multiple)
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  children: [
+                    TextButton(
+                      key: const Key('clearPlaceExercises'),
+                      onPressed: selected.isEmpty
+                          ? null
+                          : () => setState(selected.clear),
+                      child: const Text('すべて解除'),
+                    ),
+                    const Spacer(),
+                    FilledButton(
+                      key: const Key('confirmPlaceExercises'),
+                      onPressed: () => Navigator.pop(context, {...selected}),
+                      child: Text('${selected.length}件を選択'),
+                    ),
+                  ],
+                ),
+              ),
           ],
         ),
       ),
@@ -129,6 +191,7 @@ Future<void> showStoreExerciseReport(
   }
   final sent = await showDialog<bool>(
     context: context,
+    barrierDismissible: false,
     builder: (_) => _ExerciseReport(storeId: storeId, currentIds: currentIds),
   );
   if (sent == true && context.mounted) {
@@ -148,7 +211,8 @@ class _ExerciseReport extends StatefulWidget {
 
 class _ExerciseReportState extends State<_ExerciseReport> {
   String kind = 'missing_exercise';
-  String? exerciseId, error;
+  Set<String> exerciseIds = {};
+  String? error;
   bool busy = false;
   final comment = TextEditingController();
   @override
@@ -159,7 +223,7 @@ class _ExerciseReportState extends State<_ExerciseReport> {
 
   Future<void> send() async {
     if (busy) return;
-    if ((kind != 'other' && exerciseId == null) ||
+    if ((kind != 'other' && exerciseIds.isEmpty) ||
         (kind == 'other' && comment.text.trim().isEmpty)) {
       setState(() => error = kind == 'other' ? '内容を入力してください' : '対象種目を選択してください');
       return;
@@ -169,12 +233,20 @@ class _ExerciseReportState extends State<_ExerciseReport> {
       error = null;
     });
     try {
-      await GymServices.repository.reportExercise(
-        storeId: widget.storeId,
-        kind: kind,
-        exerciseId: kind == 'other' ? null : exerciseId,
-        comment: comment.text,
-      );
+      if (kind == 'other') {
+        await GymServices.repository.reportExercise(
+          storeId: widget.storeId,
+          kind: kind,
+          comment: comment.text,
+        );
+      } else {
+        await GymServices.repository.reportExercises(
+          storeId: widget.storeId,
+          kind: kind,
+          exerciseIds: {...exerciseIds},
+          comment: comment.text,
+        );
+      }
       if (mounted) Navigator.pop(context, true);
     } catch (exception) {
       if (kDebugMode) {
@@ -189,94 +261,137 @@ class _ExerciseReportState extends State<_ExerciseReport> {
       if (mounted) {
         setState(() {
           busy = false;
-          error = '報告を送信できませんでした。再度お試しください。';
+          error =
+              exception is PostgrestException &&
+                  exception.message.contains(
+                    'Please wait before reporting again',
+                  )
+              ? '送信上限に達しました。10分ほど待ってから再度お試しください。'
+              : '報告を送信できませんでした。再度お試しください。';
         });
       }
     }
   }
 
   @override
-  Widget build(BuildContext context) => AlertDialog(
-    title: const Text('対応種目を報告'),
-    content: SingleChildScrollView(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          DropdownButtonFormField<String>(
-            key: const Key('exerciseReportKind'),
-            initialValue: kind,
-            isExpanded: true,
-            items: const [
-              DropdownMenuItem(
-                value: 'missing_exercise',
-                child: Text('できるのに表示されていない'),
-              ),
-              DropdownMenuItem(
-                value: 'incorrect_exercise',
-                child: Text('表示されているができない'),
-              ),
-              DropdownMenuItem(value: 'other', child: Text('その他')),
-            ],
-            onChanged: busy
-                ? null
-                : (v) => setState(() {
-                    kind = v!;
-                    exerciseId = null;
-                  }),
-          ),
-          if (kind != 'other')
-            OutlinedButton(
-              key: const Key('exerciseReportTarget'),
-              onPressed: busy
+  Widget build(BuildContext context) => PopScope(
+    canPop: !busy,
+    child: AlertDialog(
+      title: const Text('対応種目を報告'),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            DropdownButtonFormField<String>(
+              key: const Key('exerciseReportKind'),
+              initialValue: kind,
+              isExpanded: true,
+              items: const [
+                DropdownMenuItem(
+                  value: 'missing_exercise',
+                  child: Text('できるのに表示されていない'),
+                ),
+                DropdownMenuItem(
+                  value: 'incorrect_exercise',
+                  child: Text('表示されているができない'),
+                ),
+                DropdownMenuItem(value: 'other', child: Text('その他')),
+              ],
+              onChanged: busy
                   ? null
-                  : () async {
-                      final id = await selectPlaceExercise(
-                        context,
-                        allowed: kind == 'incorrect_exercise'
-                            ? widget.currentIds
-                            : null,
-                      );
-                      if (id != null && mounted) {
-                        setState(() => exerciseId = id);
-                      }
-                    },
-              child: Text(
-                exerciseId == null
-                    ? '対象種目（必須）\n種目を選択してください  ＞'
-                    : '対象種目（必須）\n${ExerciseFormCatalog.byId[exerciseId]?.exerciseName ?? exerciseId!}  ＞',
+                  : (v) => setState(() {
+                      kind = v!;
+                      exerciseIds = {};
+                      error = null;
+                    }),
+            ),
+            if (kind != 'other') ...[
+              OutlinedButton(
+                key: const Key('exerciseReportTarget'),
+                onPressed: busy
+                    ? null
+                    : () async {
+                        final ids = await selectPlaceExercises(
+                          context,
+                          selected: exerciseIds,
+                          allowed: kind == 'incorrect_exercise'
+                              ? widget.currentIds
+                              : null,
+                        );
+                        if (ids != null && mounted) {
+                          setState(() {
+                            exerciseIds = ids;
+                            error = null;
+                          });
+                        }
+                      },
+                child: Text(
+                  exerciseIds.isEmpty
+                      ? '対象種目（必須）\n複数選択できます  ＞'
+                      : '対象種目（必須）\n${exerciseIds.length}件選択中・変更する  ＞',
+                ),
+              ),
+              if (exerciseIds.isNotEmpty)
+                Wrap(
+                  spacing: 6,
+                  children: [
+                    for (final id in exerciseIds)
+                      InputChip(
+                        key: ValueKey('exerciseReportSelected$id'),
+                        deleteIcon: const Icon(Icons.close),
+                        deleteButtonTooltipMessage: '選択を解除',
+                        label: Text(
+                          ExerciseFormCatalog.byId[id]?.exerciseName ?? id,
+                        ),
+                        onDeleted: busy
+                            ? null
+                            : () => setState(() {
+                                exerciseIds.remove(id);
+                                error = null;
+                              }),
+                      ),
+                  ],
+                ),
+            ],
+            TextField(
+              key: const Key('exerciseReportComment'),
+              controller: comment,
+              enabled: !busy,
+              onChanged: (_) => setState(() {}),
+              maxLength: 2000,
+              maxLines: 3,
+              decoration: InputDecoration(
+                labelText: kind == 'other' ? '内容（必須）' : 'コメント（任意）',
               ),
             ),
-          TextField(
-            key: const Key('exerciseReportComment'),
-            controller: comment,
-            onChanged: (_) => setState(() {}),
-            maxLength: 2000,
-            maxLines: 3,
-            decoration: InputDecoration(
-              labelText: kind == 'other' ? '内容（必須）' : 'コメント（任意）',
-            ),
+            if (error != null) Text(error!),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: busy ? null : () => Navigator.pop(context),
+          child: const Text('キャンセル'),
+        ),
+        FilledButton(
+          key: const Key('sendExerciseReport'),
+          onPressed:
+              busy ||
+                  (kind == 'other'
+                      ? comment.text.trim().isEmpty
+                      : exerciseIds.isEmpty)
+              ? null
+              : send,
+          child: Text(
+            busy
+                ? '送信中…'
+                : kind == 'other' || exerciseIds.length == 1
+                ? '報告を送信'
+                : '${exerciseIds.length}件をまとめて送信',
           ),
-          if (error != null) Text(error!),
-        ],
-      ),
+        ),
+      ],
     ),
-    actions: [
-      TextButton(
-        onPressed: busy ? null : () => Navigator.pop(context),
-        child: const Text('キャンセル'),
-      ),
-      FilledButton(
-        key: const Key('sendExerciseReport'),
-        onPressed:
-            busy ||
-                (kind == 'other'
-                    ? comment.text.trim().isEmpty
-                    : exerciseId == null)
-            ? null
-            : send,
-        child: Text(busy ? '送信中…' : '報告を送信'),
-      ),
-    ],
   );
 }
 

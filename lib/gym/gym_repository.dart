@@ -5,6 +5,9 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../config/supabase_config.dart';
 
+// Matches the existing per-user limit in limit_gym_exercise_reports().
+const maxExerciseReportsPerBatch = 20;
+
 class GymStore {
   const GymStore({
     required this.id,
@@ -305,6 +308,16 @@ abstract class GymRepository {
     throw StateError('対応種目の報告を利用できません');
   }
 
+  /// All rows must be committed together, so retrying never leaves a partial batch.
+  Future<void> reportExercises({
+    required String storeId,
+    required String kind,
+    required Set<String> exerciseIds,
+    required String comment,
+  }) async {
+    throw StateError('対応種目の一括報告を利用できません');
+  }
+
   Future<List<GymStore>> search(String query, {int offset = 0});
   Future<List<GymStore>> searchStores(
     String query, {
@@ -373,13 +386,17 @@ class GymServices {
 }
 
 class SupabaseGymRepository extends GymRepository {
+  SupabaseGymRepository([this._providedClient]);
+  final SupabaseClient? _providedClient;
   SupabaseClient get _client {
+    if (_providedClient != null) return _providedClient;
     if (!SupabaseConfig.initialized) throw StateError('店舗情報を現在利用できません');
     return Supabase.instance.client;
   }
 
-  String? get _userId =>
-      SupabaseConfig.initialized ? _client.auth.currentUser?.id : null;
+  String? get _userId => _providedClient != null || SupabaseConfig.initialized
+      ? _client.auth.currentUser?.id
+      : null;
   @override
   bool get canReport => _userId != null;
   @override
@@ -464,6 +481,33 @@ class SupabaseGymRepository extends GymRepository {
       'report_kind': kind,
       'comment': comment.trim(),
     });
+  }
+
+  @override
+  Future<void> reportExercises({
+    required String storeId,
+    required String kind,
+    required Set<String> exerciseIds,
+    required String comment,
+  }) async {
+    if (!canReport) throw StateError('報告にはログインが必要です');
+    if (!const {'missing_exercise', 'incorrect_exercise'}.contains(kind) ||
+        exerciseIds.isEmpty ||
+        exerciseIds.length > maxExerciseReportsPerBatch ||
+        exerciseIds.any((id) => id.trim().isEmpty)) {
+      throw ArgumentError('報告する種目を1〜$maxExerciseReportsPerBatch件選択してください');
+    }
+    // One PostgREST INSERT is a transaction. Existing pending/reviewing reports
+    // are skipped by the database trigger, including after a lost response.
+    await _client.from('gym_exercise_reports').insert([
+      for (final id in exerciseIds)
+        {
+          'store_id': storeId,
+          'exercise_id': id,
+          'report_kind': kind,
+          'comment': comment.trim(),
+        },
+    ]);
   }
 
   @override
