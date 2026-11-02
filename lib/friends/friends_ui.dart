@@ -23,6 +23,7 @@ import '../main.dart'
         BodyMapPage,
         ExerciseRecordTypeUi;
 import 'friends_repository.dart';
+import 'friend_roster.dart';
 
 FriendsRepository? configuredFriends() =>
     SupabaseConfig.initialized &&
@@ -90,7 +91,9 @@ class FriendsSection extends StatefulWidget {
 class _FriendsSectionState extends State<FriendsSection>
     with WidgetsBindingObserver {
   late final FriendsRepository? repo = widget.repository ?? configuredFriends();
-  List<Map<String, dynamic>> rows = [];
+  List<FriendRosterEntry> entries = [];
+  final _cardsKey = GlobalKey();
+  double _placeholderExtent = 0;
   bool loading = true;
   bool failed = false;
   int refreshGeneration = 0;
@@ -129,14 +132,25 @@ class _FriendsSectionState extends State<FriendsSection>
 
   Future<void> refresh() async {
     final generation = ++refreshGeneration;
+    final box = _cardsKey.currentContext?.findRenderObject();
+    if (!loading && box is RenderBox && box.hasSize) {
+      _placeholderExtent = box.size.height;
+    }
+    if (mounted) {
+      setState(() {
+        entries = [];
+        loading = true;
+        failed = false;
+      });
+    }
     try {
       await repo?.ensureProfile(
         await ProfilePreference.load(owner: repo?.userId),
       );
-      final result = await repo?.feed() ?? <Map<String, dynamic>>[];
+      final result = await repo?.roster() ?? <FriendRosterEntry>[];
       if (mounted && generation == refreshGeneration) {
         setState(() {
-          rows = latestFriendWorkouts(result);
+          entries = result;
           failed = false;
           loading = false;
         });
@@ -144,7 +158,7 @@ class _FriendsSectionState extends State<FriendsSection>
     } catch (_) {
       if (mounted && generation == refreshGeneration) {
         setState(() {
-          rows = [];
+          entries = [];
           failed = true;
           loading = false;
         });
@@ -184,7 +198,12 @@ class _FriendsSectionState extends State<FriendsSection>
         ],
       ),
       if (loading)
-        const LinearProgressIndicator()
+        Column(
+          children: [
+            const LinearProgressIndicator(),
+            SizedBox(height: _placeholderExtent),
+          ],
+        )
       else if (failed)
         TextButton(
           onPressed: refresh,
@@ -192,63 +211,97 @@ class _FriendsSectionState extends State<FriendsSection>
             label(context, '読み込めませんでした。再試行', 'Could not load. Retry'),
           ),
         )
-      else if (rows.isEmpty)
+      else if (entries.isEmpty)
         Text(
           label(
             context,
-            repo == null ? 'ログインするとフレンドを利用できます' : 'フレンドの共有トレーニングはまだありません',
-            repo == null ? 'Sign in to use friends' : 'No shared workouts yet',
+            repo == null ? 'ログインするとフレンドを利用できます' : 'フレンドはまだいません',
+            repo == null ? 'Sign in to use friends' : 'No friends yet',
           ),
         ),
-      for (final row in rows)
-        Card(
-          child: ListTile(
-            leading: FriendAvatar(
-              repository: repo,
-              path: (row['friend_profiles'] as Map?)?['avatar_path'] as String?,
-            ),
-            title: Text(friendName(row)),
-            subtitle: Padding(
-              padding: const EdgeInsets.only(top: 6),
-              child: Wrap(
-                spacing: 10,
-                runSpacing: 4,
-                children: [
-                  Text(dateLabel(socialWorkout(row))),
-                  Text(
-                    '${socialWorkout(row).exerciseNames.length} ${label(context, '種目', 'exercises')}',
-                  ),
-                  Text(
-                    '${socialWorkout(row).sets.where((set) => set.recordType.usesSets).length} ${label(context, 'セット', 'sets')}',
-                  ),
-                  for (final metric in socialWorkout(
-                    row,
-                  ).summaryLabel.split(' ・ '))
-                    if (metric.endsWith(' kg') ||
-                        metric == socialWorkout(row).durationLabel)
-                      Text(metric),
-                  if (repo?.commentsEnabled == true)
-                    Text(
-                      '${label(context, 'コメント', 'Comments')} ${(row['friend_comments'] as List?)?.length ?? 0}',
-                    ),
-                ],
+      if (entries.any((entry) => entry.workoutsFailed))
+        TextButton(
+          onPressed: refresh,
+          child: Text(
+            label(context, '読み込めませんでした。再試行', 'Could not load. Retry'),
+          ),
+        ),
+      Column(
+        key: _cardsKey,
+        children: [
+          for (final entry in entries)
+            Card(
+              key: ValueKey('friendCard-${entry.userId}'),
+              child: ListTile(
+                leading: FriendAvatar(repository: repo, path: entry.avatarPath),
+                title: Text(
+                  entry.displayName?.trim().isNotEmpty == true
+                      ? entry.displayName!
+                      : label(context, 'フレンド', 'Friend'),
+                ),
+                subtitle: entry.workout == null
+                    ? Text(
+                        entry.workoutsFailed
+                            ? label(
+                                context,
+                                '共有記録を読み込めませんでした',
+                                'Could not load shared workouts',
+                              )
+                            : label(
+                                context,
+                                '共有された記録はまだありません',
+                                'No shared workouts yet',
+                              ),
+                      )
+                    : Padding(
+                        padding: const EdgeInsets.only(top: 6),
+                        child: Wrap(
+                          spacing: 10,
+                          runSpacing: 4,
+                          children: [
+                            Text(dateLabel(socialWorkout(entry.workout!))),
+                            Text(
+                              '${socialWorkout(entry.workout!).exerciseNames.length} ${label(context, '種目', 'exercises')}',
+                            ),
+                            Text(
+                              '${socialWorkout(entry.workout!).sets.where((set) => set.recordType.usesSets).length} ${label(context, 'セット', 'sets')}',
+                            ),
+                            for (final metric in socialWorkout(
+                              entry.workout!,
+                            ).summaryLabel.split(' ・ '))
+                              if (metric.endsWith(' kg') ||
+                                  metric ==
+                                      socialWorkout(entry.workout!)
+                                          .durationLabel)
+                                Text(metric),
+                            if (repo?.commentsEnabled == true)
+                              Text(
+                                '${label(context, 'コメント', 'Comments')} ${(entry.workout!['friend_comments'] as List?)?.length ?? 0}',
+                              ),
+                          ],
+                        ),
+                      ),
+                trailing: entry.workout == null
+                    ? null
+                    : const Icon(Icons.chevron_right),
+                onTap: entry.workout == null
+                    ? null
+                    : () async {
+                        await Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => FriendActivityPage(
+                              repository: repo!,
+                              owner: entry.userId,
+                              selectedId: entry.workout!['id'] as String,
+                            ),
+                          ),
+                        );
+                        await refresh();
+                      },
               ),
             ),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () async {
-              await Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (_) => FriendActivityPage(
-                    repository: repo!,
-                    owner: row['user_id'] as String,
-                    selectedId: row['id'] as String,
-                  ),
-                ),
-              );
-              await refresh();
-            },
-          ),
-        ),
+        ],
+      ),
     ],
   );
 }
@@ -872,13 +925,19 @@ class _FriendActivityPageState extends State<FriendActivityPage>
         return;
       }
     }
-    final result = await widget.repository.feed(owner: widget.owner);
-    final matches = result.where(
-      (r) =>
-          r['id'] ==
-          (selected?['id'] ??
-              (_calendarInitialized ? null : widget.selectedId)),
-    );
+    final result = [...await widget.repository.feed(owner: widget.owner)];
+    final selectedId =
+        selected?['id'] ?? (_calendarInitialized ? null : widget.selectedId);
+    if (selectedId is String &&
+        result.length >= 1000 &&
+        !result.any((row) => row['id'] == selectedId)) {
+      final exact = await widget.repository.historyWorkoutById(
+        selectedId,
+        widget.owner,
+      );
+      if (exact != null && exact['user_id'] == widget.owner) result.add(exact);
+    }
+    final matches = result.where((row) => row['id'] == selectedId);
     final current = matches.isEmpty ? null : matches.first;
     final messages = current == null || !widget.repository.commentsEnabled
         ? <Map<String, dynamic>>[]

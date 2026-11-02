@@ -7,6 +7,7 @@ import '../profile/profile_preference.dart';
 import '../config/friends_release.dart';
 import 'friend_snapshot_journal.dart';
 import 'friend_workout_owner.dart';
+import 'friend_roster.dart';
 
 class FriendsRepository {
   FriendsRepository(
@@ -22,6 +23,8 @@ class FriendsRepository {
   bool _mutualSharingAvailable = false;
   bool _idempotentCommentsAvailable = false;
   bool _ownedSharingAvailable = false;
+  bool _workoutUpdatesAvailable = false;
+  bool get supportsWorkoutUpdates => _workoutUpdatesAvailable;
   bool get supportsOwnedSharing => _ownedSharingAvailable;
   bool get supportsIdempotentComments => _idempotentCommentsAvailable;
   bool get supportsMutualFriendSharing => _mutualSharingAvailable;
@@ -40,6 +43,7 @@ class FriendsRepository {
         result?.containsKey('sharing_consent_version') ?? false;
     _idempotentCommentsAvailable = result?['comment_idempotency_version'] == 1;
     _ownedSharingAvailable = result?['friend_owned_sync_version'] == 1;
+    _workoutUpdatesAvailable = result?['friend_workout_updates_version'] == 1;
     return result;
   }
 
@@ -360,6 +364,50 @@ class FriendsRepository {
   Future<void> remove(String id) async {
     await client.from('friend_connections').delete().eq('id', id);
   }
+
+  /// Always start from current accepted connections. No cached workout can
+  /// resurrect a removed relationship, and a failed read is never an empty one.
+  Future<List<FriendRosterEntry>> roster() async {
+    final viewer = userId;
+    final items = await connections();
+    if (userId != viewer) throw StateError('Account changed');
+    List<Map<String, dynamic>> workouts;
+    var failed = false;
+    try {
+      workouts = supportsWorkoutUpdates ? await latestUpdates() : await feed();
+    } catch (_) {
+      workouts = [];
+      failed = true;
+    }
+    if (userId != viewer) throw StateError('Account changed');
+    return friendRosterEntries(
+      viewer: viewer,
+      connections: items,
+      workouts: workouts,
+      updateTimesAvailable: supportsWorkoutUpdates,
+      workoutsFailed: failed,
+    );
+  }
+
+  Future<List<Map<String, dynamic>>> latestUpdates() async => await client
+      .rpc('latest_updated_friend_workouts')
+      .select(
+        '*, friend_likes(user_id)${commentsEnabled ? ', friend_comments(id)' : ''}',
+      );
+
+  /// An edited workout can be older than the detail history's 1000-row page.
+  /// Recheck its owner and RLS; never open a cached payload from the card.
+  Future<Map<String, dynamic>?> historyWorkoutById(
+    String id,
+    String owner,
+  ) async => await client
+      .from('friend_workouts')
+      .select(
+        '*, friend_profiles!inner(display_name${supportsProfileInvites ? ', avatar_path' : ''}), friend_likes(user_id)${commentsEnabled ? ', friend_comments(id)' : ''}',
+      )
+      .eq('id', id)
+      .eq('user_id', owner)
+      .maybeSingle();
 
   Future<List<Map<String, dynamic>>> feed({String? owner}) async {
     if (_profileInvitesAvailable == null) await profile();

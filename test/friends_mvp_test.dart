@@ -151,7 +151,7 @@ void main() {
   testWidgets(
     'feed opens read-only detail, toggles one like, comments, clears on revoked access',
     (t) async {
-      final repo = FakeFriends();
+      final repo = FakeFriends()..accepted = true;
       await t.pumpWidget(
         MaterialApp(
           home: Scaffold(

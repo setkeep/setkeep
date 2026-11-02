@@ -68,6 +68,16 @@ const feedbackSets = [
 
 class ClosedFriends extends FakeFriends {
   @override
+  Future<List<Map<String, dynamic>>> connections() async => [
+    {
+      'requester': viewer,
+      'recipient': 'friend',
+      'status': 'accepted',
+      'friend_name': 'Synthetic friend',
+      'avatar_path': hasPhoto ? 'friend/photo.png' : null,
+    },
+  ];
+  @override
   bool get commentsEnabled => false;
   String viewer = 'me';
   bool accessible = true;

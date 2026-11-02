@@ -11,13 +11,29 @@ import 'package:setkeep/main.dart';
 import 'friends_mvp_test.dart' show FakeFriends;
 
 class TabFriends extends FakeFriends {
-  TabFriends([this.owner = 'me']);
+  TabFriends([this.owner = 'me']) {
+    accepted = true;
+  }
   final String owner;
   int feedReads = 0;
   int publications = 0;
   int friendCount = 1;
   @override
   String get userId => owner;
+  @override
+  Future<List<Map<String, dynamic>>> connections() async {
+    if (this.fail) throw StateError('offline connections');
+    return [
+      for (var i = 0; i < friendCount; i++)
+        {
+          'requester': userId,
+          'recipient': friendCount == 1 ? 'friend' : 'friend$i',
+          'status': 'accepted',
+          'friend_name': i == 0 ? 'Alice' : 'Friend $i',
+        },
+    ];
+  }
+
   @override
   Future<List<Map<String, dynamic>>> feed({String? owner}) async {
     feedReads++;
