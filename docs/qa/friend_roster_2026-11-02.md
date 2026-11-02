@@ -44,6 +44,11 @@ Android ARM64 Debug APKは最終ソースで成功した。接続設定のない
 - APK: `build/app/outputs/flutter-apk/app-debug.apk`
 - SHA-256: `c876d82f6264c5bc6aae5843a04bec1525efcba92ca31154db8112b46c8bb988`
 
-iOSは署名なし汎用端末向けビルドを実行中。設定段階のSwift Package Manager依存取得を待っており、コンパイルは未開始。結果を確認して追記する。
+iOS Releaseの汎用端末向け署名なしビルドも成功した。Swift Package Managerの依存取得後、専用の外部ディスク上のDerivedDataで `xcodebuild` が終了コード0、`BUILD SUCCEEDED` を返した。署名更新・端末操作・インストール・配布は行っていない。
+
+- APP: `/Volumes/PS2000W/SETKEEP/friend-roster-validation-20261102/ios-derived/Build/Products/Release-iphoneos/Runner.app`
+- 両OSは接続設定のない検証用の `1.0.0 (7)`。ストア向けの配布候補ではない。
+- iOS内の更新順RPCと素材240点の全ハッシュ一致、外側のコード署名がないことを確認した。
+- 実装・テスト・DB候補の保存コミット: `9f80bf9ed9f6333abef753a833e4ccda42845175`。ビルド後の追記はこの文書だけで、実装コードは同一。
 
 ログ・SQL結果・合成画面・素材照合は `/Volumes/PS2000W/SETKEEP/friend-roster-validation-20261102` と同階層の `friend-roster-20261102-*.log` に保存する。
