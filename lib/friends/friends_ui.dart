@@ -20,10 +20,12 @@ import '../main.dart'
     show
         WorkoutRecord,
         WorkoutDetailExerciseCard,
+        WorkoutDetailSummary,
         BodyMapPage,
         ExerciseRecordTypeUi;
 import 'friends_repository.dart';
 import 'friend_roster.dart';
+import 'shared_workout_date.dart';
 
 FriendsRepository? configuredFriends() =>
     SupabaseConfig.initialized &&
@@ -33,7 +35,7 @@ FriendsRepository? configuredFriends() =>
 
 WorkoutRecord socialWorkout(Map<String, dynamic> row) =>
     WorkoutRecord.fromJson({
-      'date': row['performed_at'],
+      'date': sharedWorkoutDate(row).toIso8601String(),
       'durationSeconds': row['duration_seconds'],
       'sets': row['sets'],
     });
@@ -232,6 +234,7 @@ class _FriendsSectionState extends State<FriendsSection>
           for (final entry in entries)
             Card(
               key: ValueKey('friendCard-${entry.userId}'),
+              margin: const EdgeInsets.only(bottom: 12),
               child: ListTile(
                 leading: FriendAvatar(repository: repo, path: entry.avatarPath),
                 title: Text(
@@ -1147,25 +1150,28 @@ class _FriendActivityPageState extends State<FriendActivityPage>
                   ),
                 ),
               if (workout == null || shownRows.length > 1)
-                for (final r in shownRows)
+                for (var index = 0; index < shownRows.length; index++)
                   ListTile(
-                    selected: r['id'] == row?['id'],
+                    key: ValueKey('friendWorkout-${shownRows[index]['id']}'),
+                    selected: shownRows[index]['id'] == row?['id'],
                     title: Text(
-                      '${socialWorkout(r).date.toLocal().hour.toString().padLeft(2, '0')}:${socialWorkout(r).date.toLocal().minute.toString().padLeft(2, '0')}',
+                      label(context, '記録 ${index + 1}', 'Workout ${index + 1}'),
                     ),
-                    subtitle: Text(socialWorkout(r).summaryLabel),
+                    subtitle: Text(
+                      socialWorkout(shownRows[index]).summaryLabel,
+                    ),
                     onTap: busy
                         ? null
                         : () => run(() async {
-                            selected = r;
+                            selected = shownRows[index];
                             await load();
                           }),
                   ),
               if (workout != null) ...[
                 const SizedBox(height: 10),
-                Text(
-                  workout.summaryLabel,
-                  style: const TextStyle(color: Color(0xFF6C746D)),
+                WorkoutDetailSummary(
+                  workout: workout,
+                  alwaysShowDuration: true,
                 ),
                 const SizedBox(height: 22),
                 for (final group in workout.exerciseGroups.values)

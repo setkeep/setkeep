@@ -59,6 +59,8 @@ final class PhoneWatchBridge: NSObject, WCSessionDelegate {
     var method = "cancel"
     var args: [String: Any] = [:]
     switch action {
+    case .complete:
+      display.cancel()
     case .pause:
       display.cancel(remaining: remaining)
       args["remainingSeconds"] = remaining

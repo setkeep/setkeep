@@ -152,6 +152,7 @@ class _NotificationSourcesPageState extends State<NotificationSourcesPage>
           if (error != null) Text(error!),
           if (widget.likes?.userId != null)
             Card(
+              margin: const EdgeInsets.only(bottom: 12),
               child: ListTile(
                 key: const Key('likeNotificationSource'),
                 leading: const Icon(Icons.favorite_border_rounded),
@@ -170,6 +171,7 @@ class _NotificationSourcesPageState extends State<NotificationSourcesPage>
             ),
           if (_friendCommentsEnabled)
             Card(
+              margin: const EdgeInsets.only(bottom: 12),
               child: ListTile(
                 key: const Key('friendNotificationSource'),
                 leading: const Icon(Icons.people_outline),
@@ -188,6 +190,7 @@ class _NotificationSourcesPageState extends State<NotificationSourcesPage>
             ),
           if (widget.showTrainerNotifications)
             Card(
+              margin: const EdgeInsets.only(bottom: 12),
               child: ListTile(
                 key: const Key('trainerNotificationSource'),
                 leading: const Icon(Icons.fitness_center),
@@ -372,6 +375,7 @@ class _FriendCommentInboxPageState extends State<FriendCommentInboxPage>
                   ),
                 for (final row in rows)
                   Card(
+                    margin: const EdgeInsets.only(bottom: 12),
                     child: ListTile(
                       key: ValueKey('friendCommentNotification_${row['id']}'),
                       leading: Icon(

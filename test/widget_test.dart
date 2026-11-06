@@ -1,4 +1,7 @@
+import 'package:setkeep/sharing/workout_share_artwork.dart';
+
 import 'support/signed_in_auth.dart';
+
 import 'package:setkeep/exercise_form_catalog.dart';
 
 import 'support/bulk_exercise_flow.dart';
@@ -3764,8 +3767,12 @@ void main() {
       (mark.image as AssetImage).assetName,
       'assets/brand/setkeep_share_lockup.png',
     );
-    expect(mark.width, 84);
-    expect(mark.height, 52);
+    expect(mark.width, greaterThan(200));
+    final artwork = find.byType(WorkoutShareArtwork);
+    expect(
+      (tester.getCenter(brand) - tester.getCenter(artwork)).distance,
+      lessThan(1),
+    );
     expect(mark.fit, BoxFit.contain);
     expect(find.textContaining('TRAIN TODAY. KEEP GROWING.'), findsNothing);
     final longTitle = tester.widget<Text>(

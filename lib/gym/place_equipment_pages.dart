@@ -492,6 +492,7 @@ class _PrivatePlaceEquipmentPageState extends State<PrivatePlaceEquipmentPage> {
           ],
           for (final item in items)
             Card(
+              margin: const EdgeInsets.only(bottom: 12),
               child: Column(
                 children: [
                   ListTile(

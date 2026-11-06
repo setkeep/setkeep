@@ -10,7 +10,7 @@ import 'friends/friend_snapshot_journal.dart';
 import 'activity_speed.dart';
 export 'activity_speed.dart';
 import 'design/setkeep_navigation.dart';
-import 'sharing/share_photo_frame.dart';
+import 'sharing/workout_share_artwork.dart';
 import 'friends/friends_ui.dart';
 import 'friends/friends_tab_page.dart';
 import 'friends/friends_repository.dart';
@@ -2466,6 +2466,7 @@ class _MenuExerciseOrderPageState extends State<_MenuExerciseOrderPage> {
                 final exercise = _exercises[index].template;
                 return Card(
                   key: ValueKey('menuOrder${exercise.identity}'),
+                  margin: const EdgeInsets.only(bottom: 12),
                   child: ListTile(
                     leading: const Icon(Icons.drag_handle_rounded),
                     title: Text(
@@ -3454,11 +3455,6 @@ class _BodyMapPageState extends State<BodyMapPage> {
           const Text(
             '3D筋肉マネキン',
             style: TextStyle(fontSize: 27, fontWeight: FontWeight.w900),
-          ),
-          const SizedBox(height: 6),
-          const Text(
-            '選択期間の部位バランスを赤の濃淡で表示します',
-            style: TextStyle(color: Color(0xFF6C746D)),
           ),
           const SizedBox(height: 18),
           SingleChildScrollView(
@@ -5492,9 +5488,14 @@ void _showDeletedWorkoutUndo(
     );
 }
 
-class _WorkoutDetailSummary extends StatelessWidget {
-  const _WorkoutDetailSummary({required this.workout});
+class WorkoutDetailSummary extends StatelessWidget {
+  const WorkoutDetailSummary({
+    super.key,
+    required this.workout,
+    this.alwaysShowDuration = false,
+  });
   final WorkoutRecord workout;
+  final bool alwaysShowDuration;
 
   @override
   Widget build(BuildContext context) {
@@ -5505,9 +5506,13 @@ class _WorkoutDetailSummary extends StatelessWidget {
         '${workout.sets.where((set) => set.recordType.usesSets).length} セット',
       ),
       ('総ボリューム', '${formatVolumeKg(workout.volume)} kg'),
-      if (WorkoutUiPreference.workoutDurationEnabled &&
-          workout.durationLabel.isNotEmpty)
-        ('トレーニング時間', workout.durationLabel),
+      if (alwaysShowDuration ||
+          (WorkoutUiPreference.workoutDurationEnabled &&
+              workout.durationLabel.isNotEmpty))
+        (
+          'トレーニング時間',
+          workout.durationLabel.isEmpty ? '—' : workout.durationLabel,
+        ),
     ];
     return Container(
       key: const Key('workoutDetailSummary'),
@@ -5736,7 +5741,7 @@ class _WorkoutDetailPageState extends State<WorkoutDetailPage> {
               ),
             ],
             const SizedBox(height: 10),
-            _WorkoutDetailSummary(workout: workout),
+            WorkoutDetailSummary(workout: workout),
             if (configuredFriends()?.commentsEnabled == true &&
                 workout.trainerWorkoutId == null)
               HistoryWorkoutCommentsEntry(
@@ -5972,64 +5977,11 @@ class _WorkoutSharePageState extends State<WorkoutSharePage> {
                   key: _previewKey,
                   child: ClipRRect(
                     borderRadius: BorderRadius.zero,
-                    child: SharePhotoFrame(
-                      bytes: _backgroundBytes,
-                      foreground: [
-                        const DecoratedBox(
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              begin: Alignment.topCenter,
-                              end: Alignment.bottomCenter,
-                              colors: [
-                                Color(0x22000000),
-                                Color(0x55000000),
-                                Color(0xE8000000),
-                              ],
-                            ),
-                          ),
-                        ),
-                        Padding(
-                          padding: const EdgeInsets.fromLTRB(22, 24, 22, 24),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Image.asset(
-                                key: const Key('shareBrandLogo'),
-                                'assets/brand/setkeep_share_lockup.png',
-                                width: 84,
-                                height: 52,
-                                fit: BoxFit.contain,
-                              ),
-                              const Spacer(),
-                              Text(
-                                '${widget.workout.date.year}.${widget.workout.date.month.toString().padLeft(2, '0')}.${widget.workout.date.day.toString().padLeft(2, '0')}',
-                                style: const TextStyle(
-                                  color: Colors.white70,
-                                  fontSize: 12,
-                                ),
-                              ),
-                              const SizedBox(height: 10),
-                              Flexible(
-                                flex: 6,
-                                child: FittedBox(
-                                  fit: BoxFit.scaleDown,
-                                  alignment: Alignment.bottomLeft,
-                                  child: SizedBox(
-                                    width: 290,
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: _exerciseShareRows(
-                                        widget.workout,
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
+                    child: WorkoutShareArtwork(
+                      backgroundBytes: _backgroundBytes,
+                      date:
+                          '${widget.workout.date.year}.${widget.workout.date.month.toString().padLeft(2, '0')}.${widget.workout.date.day.toString().padLeft(2, '0')}',
+                      exerciseRows: _exerciseShareRows(widget.workout),
                     ),
                   ),
                 ),
@@ -9607,13 +9559,6 @@ class ExerciseMuscleDetailPage extends StatelessWidget {
                   .toList(),
             ),
           ],
-          const SizedBox(height: 16),
-          Text(
-            (form?.available == true)
-                ? '濃い赤がメインターゲット、薄い赤が補助的に使う筋肉です。対象筋の説明で、筋活動の実測値ではありません。'
-                : '濃い赤がメインターゲット、薄い赤が補助的に使う筋肉です。',
-            style: const TextStyle(color: Color(0xFF666D68)),
-          ),
         ],
       ),
     );

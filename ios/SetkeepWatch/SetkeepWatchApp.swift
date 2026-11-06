@@ -31,10 +31,11 @@ struct RestWatchView: View {
               .minimumScaleFactor(0.6).lineLimit(1)
             if phase != "idle" {
               Text(session.state?.exerciseName ?? "").font(.caption).lineLimit(2)
-              Button(phase == "running" ? watchText("一時停止", "Pause") : watchText("再開", "Resume")) {
+              Button(phase == "running" ? watchText("停止", "Stop") : watchText("再開", "Resume")) {
                 session.send(phase == "running" ? .pause : .resume)
               }.tint(accent)
               Button(watchText("＋30秒", "+30 seconds")) { session.send(.extend) }
+              Button(watchText("完了", "Done")) { session.send(.complete) }
             } else {
               Text(watchText("iPhoneで休憩タイマーを開始してください", "Start a rest timer on your iPhone")).font(.caption)
             }

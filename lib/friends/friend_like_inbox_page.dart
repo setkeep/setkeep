@@ -173,6 +173,7 @@ class _FriendLikeInboxPageState extends State<FriendLikeInboxPage>
             Text(tr('いいね通知はまだありません', 'No like notifications yet')),
           for (final row in _rows)
             Card(
+              margin: const EdgeInsets.only(bottom: 12),
               child: ListTile(
                 key: ValueKey('friendLikeNotification_${row['id']}'),
                 leading: FriendAvatar(

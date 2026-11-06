@@ -51,7 +51,7 @@ struct RestWatchState {
 }
 
 enum RestWatchAction: String {
-  case pause, resume, extend
+  case pause, resume, extend, complete
 }
 
 /// Commands are never queued for later. A delayed command cannot change a newer timer.

@@ -47,6 +47,16 @@ struct RestWatchProtocolTests {
     check(gate.accept(invalid, state: running, now: now) == nil, "malformed command rejected")
     invalid = RestWatchCommand.message(action: .extend, state: running); invalid["action"] = "finishWorkout"
     check(gate.accept(invalid, state: running, now: now) == nil, "unsupported mutation rejected")
+    let done = RestWatchCommand.message(action: .complete, state: running)
+    check(gate.accept(done, state: running, now: now) == .complete, "active rest completion accepted")
+    check(gate.accept(done, state: running, now: now) == nil, "repeated completion is idempotent")
+    check(gate.accept(RestWatchCommand.message(action: .complete, state: paused), state: paused, now: now) == .complete, "paused rest can complete")
+    let idle = RestWatchState(timerID: "", revision: 6, deadlineMilliseconds: 0, pausedSeconds: 0, exerciseName: "")
+    check(gate.accept(done, state: idle, now: now) == nil, "completed timer rejects delayed complete")
+    check(gate.accept(done, state: other, now: now) == nil, "reconnection cannot complete a newer timer")
+    check(gate.accept(RestWatchCommand.message(action: .complete, state: running), state: running, now: now.addingTimeInterval(61)) == nil, "background expiry rejects stale completion")
+    let updated = RestWatchState(timerID: timer, revision: 9, deadlineMilliseconds: running.deadlineMilliseconds, pausedSeconds: 0, exerciseName: "")
+    check(gate.accept(done, state: updated, now: now) == nil, "foreground revision rejects prior completion")
     print("All \(checks) Watch protocol checks passed.")
   }
 }

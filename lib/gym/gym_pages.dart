@@ -566,22 +566,16 @@ class _RegisteredGymsPageState extends State<RegisteredGymsPage> {
                 style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800),
               ),
               const SizedBox(height: 10),
-              Card(
+              Column(
                 key: const Key('otherTrainingPlaces'),
-                margin: EdgeInsets.zero,
-                clipBehavior: Clip.antiAlias,
-                child: Column(
-                  children: [
-                    for (var i = 0; i < others.length; i++) ...[
-                      if (i > 0)
-                        const Padding(
-                          padding: EdgeInsets.symmetric(horizontal: 16),
-                          child: Divider(height: 1),
-                        ),
-                      _placeTile(others[i], featured: false),
-                    ],
-                  ],
-                ),
+                children: [
+                  for (final place in others)
+                    Card(
+                      margin: const EdgeInsets.only(bottom: 12),
+                      clipBehavior: Clip.antiAlias,
+                      child: _placeTile(place, featured: false),
+                    ),
+                ],
               ),
             ],
             const SizedBox(height: 16),
@@ -806,6 +800,7 @@ class _GymStoreEquipmentPageState extends State<GymStoreEquipmentPage>
                   (e) => e.displayCategory == category,
                 ))
                   Card(
+                    margin: const EdgeInsets.only(bottom: 12),
                     child: ListTile(
                       key: ValueKey('gymEquipment${e.id}'),
                       title: Text(e.name),
@@ -984,6 +979,7 @@ class _GymEquipmentExercisesPageState extends State<GymEquipmentExercisesPage> {
               ),
             for (final f in forms)
               Card(
+                margin: const EdgeInsets.only(bottom: 12),
                 child: ListTile(
                   key: ValueKey('addGymExercise${f.exerciseId}'),
                   selected: _selected.contains(f.exerciseId),
