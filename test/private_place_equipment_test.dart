@@ -335,6 +335,20 @@ void main() {
         await t.pumpAndSettle();
         await t.tap(find.byKey(const Key('addExerciseButton')));
         await t.pumpAndSettle();
+        final sheet = t.widget<BottomSheet>(find.byType(BottomSheet));
+        expect(sheet.clipBehavior, Clip.antiAlias);
+        final header = t.widget<ColoredBox>(
+          find.byKey(const Key('exercisePickerHeader')),
+        );
+        expect(sheet.backgroundColor, header.color);
+        final surface = t.widget<Material>(
+          find.descendant(
+            of: find.byType(BottomSheet),
+            matching: find.byType(Material),
+          ).first,
+        );
+        expect(surface.clipBehavior, Clip.antiAlias);
+        expect(surface.shape, isA<RoundedRectangleBorder>());
         await t.tap(find.byKey(const Key('storeExerciseFilter')));
         await t.pumpAndSettle();
         expect(find.byKey(const Key('reportStoreExercises')), findsOneWidget);

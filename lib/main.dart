@@ -2218,6 +2218,9 @@ class _SavedMenuManagementPageState extends State<SavedMenuManagementPage> {
     final selections = await showModalBottomSheet<List<ExerciseSelection>>(
       context: context,
       showDragHandle: false,
+      clipBehavior: Clip.antiAlias,
+      backgroundColor: Theme.of(context).bottomSheetTheme.backgroundColor ??
+          Theme.of(context).colorScheme.surface,
       isScrollControlled: true,
       useSafeArea: true,
       builder: (context) => ExercisePickerViewport(
@@ -6867,6 +6870,9 @@ class _WorkoutPageState extends State<WorkoutPage> with WidgetsBindingObserver {
     final selected = await showModalBottomSheet<List<ExerciseSelection>>(
       context: context,
       showDragHandle: false,
+      clipBehavior: Clip.antiAlias,
+      backgroundColor: Theme.of(context).bottomSheetTheme.backgroundColor ??
+          Theme.of(context).colorScheme.surface,
       isScrollControlled: true,
       useSafeArea: true,
       builder: (context) => ExercisePickerViewport(
