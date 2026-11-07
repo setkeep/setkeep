@@ -1,38 +1,62 @@
 import AppKit
 import Foundation
 
-// Derive a small transparent lockup from the approved splash artwork.
-// Source top: SK symbol; middle: SETKEEP wordmark. The tagline is excluded.
-let source = NSBitmapImageRep(data: try Data(contentsOf: URL(fileURLWithPath: "assets/brand/setkeep_splash_lockup_source.png")))!
-let width = 320, height = 174
+// Render the reviewed resolution-independent contour master, not a resized PNG.
+// The SVG is the single source of truth for design tools and future exports.
+let document = try XMLDocument(contentsOf: URL(fileURLWithPath: "assets/brand/setkeep_share_vector.svg"))
+let elements = try document.nodes(forXPath: "//*[local-name()='path']")
+let scale = 4
+let width = 320 * scale, height = 174 * scale
 let output = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: width, pixelsHigh: height,
                               bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true,
                               isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: width * 4,
                               bitsPerPixel: 32)!
-for y in 0..<height { for x in 0..<width { output.setColor(NSColor(calibratedWhite: 0, alpha: 0), atX: x, y: y) } }
-func drawCrop(srcX: Int, srcY: Int, srcWidth: Int, srcHeight: Int,
-              dstX: Int, dstY: Int, dstWidth: Int, dstHeight: Int) {
-  for y in 0..<dstHeight {
-    for x in 0..<dstWidth {
-      let sx = srcX + x * srcWidth / dstWidth
-      let sy = srcY + y * srcHeight / dstHeight
-      guard let color = source.colorAt(x: sx, y: sy)?.usingColorSpace(.deviceRGB),
-            color.alphaComponent > 0.01 else { continue }
-      let r = color.redComponent, g = color.greenComponent, b = color.blueComponent
-      let isGreen = g > r * 1.25 && g > b * 1.10 && g > 0.2
-      // The source has a dark wordmark that vanishes on the SNS image's dark overlay.
-      // Keep the approved green stroke and render dark artwork white.
-      let result = isGreen
-        ? NSColor(calibratedRed: r, green: g, blue: b, alpha: color.alphaComponent)
-        : NSColor(calibratedRed: 1, green: 1, blue: 1, alpha: color.alphaComponent)
-      output.setColor(result, atX: dstX + x, y: dstY + y)
+NSGraphicsContext.saveGraphicsState()
+let context = NSGraphicsContext(bitmapImageRep: output)!
+NSGraphicsContext.current = context
+context.shouldAntialias = true
+context.imageInterpolation = .high
+let transform = AffineTransform(translationByX: 0, byY: CGFloat(height))
+var mapping = transform
+mapping.scale(x: CGFloat(scale), y: -CGFloat(scale))
+for element in elements {
+  let element = element as! XMLElement
+  let green = element.attribute(forName: "fill")!.stringValue!.contains("brandGreen")
+  let data = element.attribute(forName: "d")!.stringValue!
+  let expression = try NSRegularExpression(pattern: "[MLCZ]|-?[0-9]+(?:\\.[0-9]+)?")
+  let tokens = expression.matches(in: data, range: NSRange(data.startIndex..., in: data)).map {
+    String(data[Range($0.range, in: data)!])
+  }
+  let path = NSBezierPath()
+  path.windingRule = .evenOdd
+  var index = 0
+  func point() -> NSPoint {
+    let x = Double(tokens[index])!, y = Double(tokens[index + 1])!
+    index += 2
+    return NSPoint(x: x, y: y)
+  }
+  while index < tokens.count {
+    let command = tokens[index]; index += 1
+    switch command {
+    case "M": path.move(to: point())
+    case "L": path.line(to: point())
+    case "C":
+      let c1 = point(), c2 = point(), end = point()
+      path.curve(to: end, controlPoint1: c1, controlPoint2: c2)
+    case "Z": path.close()
+    default: fatalError("Unsupported SVG command")
     }
   }
+  path.transform(using: mapping)
+  if green {
+    let gradient = NSGradient(starting: NSColor(srgbRed: 0, green: 203.0/255, blue: 166.0/255, alpha: 1),
+                              ending: NSColor(srgbRed: 0, green: 135.0/255, blue: 125.0/255, alpha: 1))!
+    gradient.draw(in: path, angle: -90)
+  } else {
+    NSColor.white.setFill()
+    path.fill()
+  }
 }
-// Image coordinates here are top-origin. Crops stop before the source tagline.
-drawCrop(srcX: 90, srcY: 5, srcWidth: 280, srcHeight: 135,
-         dstX: 48, dstY: 4, dstWidth: 224, dstHeight: 108)
-drawCrop(srcX: 5, srcY: 170, srcWidth: 450, srcHeight: 56,
-         dstX: 16, dstY: 130, dstWidth: 288, dstHeight: 36)
-let png = output.representation(using: .png, properties: [:])!
-try png.write(to: URL(fileURLWithPath: "assets/brand/setkeep_share_lockup.png"))
+NSGraphicsContext.restoreGraphicsState()
+try output.representation(using: .png, properties: [:])!.write(to: URL(fileURLWithPath: "assets/brand/setkeep_share_lockup.png"))
+print("Rendered vector master at \(width)x\(height)")

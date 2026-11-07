@@ -54,6 +54,7 @@ class WorkoutShareArtwork extends StatelessWidget {
                 child: Image.asset(
                   logoAsset,
                   key: const Key('shareBrandLogo'),
+                  filterQuality: FilterQuality.high,
                   width: size.maxWidth * 0.82,
                   fit: BoxFit.contain,
                 ),
@@ -79,6 +80,7 @@ class WorkoutShareArtwork extends StatelessWidget {
                       child: Image.asset(
                         logoAsset,
                         key: const Key('shareBrandLogo'),
+                        filterQuality: FilterQuality.high,
                         width: dateWidth / 0.9,
                         fit: BoxFit.contain,
                       ),

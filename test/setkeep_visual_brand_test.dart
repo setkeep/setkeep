@@ -1,4 +1,5 @@
 import 'support/signed_in_auth.dart';
+
 import 'dart:io';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
@@ -22,11 +23,23 @@ void main() {
     final image = (await codec.getNextFrame()).image;
     final rgba = (await image.toByteData(format: ui.ImageByteFormat.rawRgba))!;
     int alphaAt(int x, int y) => rgba.getUint8((y * image.width + x) * 4 + 3);
-    expect((image.width, image.height), (320, 174));
+    expect((image.width, image.height), (1280, 696));
     expect(alphaAt(0, 0), 0);
-    expect(alphaAt(160, 120), 0); // No white card between mark and wordmark.
-    expect(alphaAt(160, 145), greaterThan(200)); // SETKEEP wordmark.
-    expect(alphaAt(160, 173), 0); // No source tagline below it.
+    expect(alphaAt(640, 480), 0); // No white card between mark and wordmark.
+    expect(alphaAt(640, 580), greaterThan(200)); // SETKEEP wordmark.
+    expect(alphaAt(640, 695), 0); // No source tagline below it.
+    var antialiasedPixels = 0;
+    for (var offset = 3; offset < rgba.lengthInBytes; offset += 4) {
+      final alpha = rgba.getUint8(offset);
+      if (alpha > 0 && alpha < 255) antialiasedPixels++;
+    }
+    expect(antialiasedPixels, greaterThan(500));
+    final vector = File('assets/brand/setkeep_share_vector.svg')
+        .readAsStringSync();
+    expect(vector, contains('viewBox="0 0 320 174"'));
+    expect(vector, contains('<path'));
+    expect(vector, isNot(contains('<image')));
+    expect(vector, isNot(contains('<text'))); // Preserve custom lettering.
     image.dispose();
     codec.dispose();
   });
@@ -38,7 +51,9 @@ void main() {
     await tester.pumpWidget(
       Builder(
         builder: (context) {
-          app = const SetkeepApp(auth: SignedInTestAuth()).build(context) as MaterialApp;
+          app = const SetkeepApp(
+            auth: SignedInTestAuth(),
+          ).build(context) as MaterialApp;
           return const SizedBox();
         },
       ),

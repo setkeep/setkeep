@@ -331,6 +331,12 @@ void main() {
           if (bytes != null) await precacheImage(MemoryImage(bytes), context);
         });
         await t.pumpAndSettle();
+        expect(
+          t
+              .widget<Image>(find.byKey(const Key('shareBrandLogo')))
+              .filterQuality,
+          FilterQuality.high,
+        );
         final logo = t.getRect(find.byKey(const Key('shareBrandLogo')));
         final date = t.getRect(find.byKey(const Key('shareDate')));
         final frame = t.getRect(find.byType(WorkoutShareArtwork));
@@ -353,7 +359,9 @@ void main() {
         final boundary =
             key.currentContext!.findRenderObject() as RenderRepaintBoundary;
         await t.runAsync(() async {
-          final image = await boundary.toImage(pixelRatio: 2);
+          final image = await boundary.toImage(pixelRatio: 3);
+          expect(image.width, 1020);
+          expect(image.height, 1814);
           final png = await image.toByteData(format: ui.ImageByteFormat.png);
           final output = Platform.environment['FEEDBACK_QA_DIR'];
           if (output != null) {
