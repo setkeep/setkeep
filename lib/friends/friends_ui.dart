@@ -928,18 +928,11 @@ class _FriendActivityPageState extends State<FriendActivityPage>
         return;
       }
     }
-    final result = [...await widget.repository.feed(owner: widget.owner)];
+    // Daily totals require the complete visible history, not a feed page plus
+    // a selected-row fallback that can omit other records from the same day.
+    final result = await widget.repository.history(owner: widget.owner);
     final selectedId =
         selected?['id'] ?? (_calendarInitialized ? null : widget.selectedId);
-    if (selectedId is String &&
-        result.length >= 1000 &&
-        !result.any((row) => row['id'] == selectedId)) {
-      final exact = await widget.repository.historyWorkoutById(
-        selectedId,
-        widget.owner,
-      );
-      if (exact != null && exact['user_id'] == widget.owner) result.add(exact);
-    }
     final matches = result.where((row) => row['id'] == selectedId);
     final current = matches.isEmpty ? null : matches.first;
     final messages = current == null || !widget.repository.commentsEnabled

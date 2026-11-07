@@ -453,6 +453,69 @@ class FriendsRepository {
         .limit(1000);
   }
 
+  /// Loads the complete visible history separately from the bounded feed used
+  /// by cards and avatar previews. A failed page never returns a partial list.
+  Future<List<Map<String, dynamic>>> history({required String owner}) async {
+    final viewer = client.auth.currentUser?.id;
+    if (viewer == null) throw StateError('Account changed');
+    if (_profileInvitesAvailable == null) await profile();
+    _requireOwner(viewer);
+    final fields =
+        '*, friend_profiles!inner(display_name${supportsProfileInvites ? ', avatar_path' : ''}), friend_likes(user_id)${commentsEnabled ? ', friend_comments(id)' : ''}';
+    const pageSize = 1000;
+    final result = <Map<String, dynamic>>[];
+    final seenIds = <String>{};
+    _FriendHistoryCursor? cursor;
+    while (true) {
+      _requireOwner(viewer);
+      var query = client
+          .from('friend_workouts')
+          .select(fields)
+          .eq('user_id', owner);
+      if (cursor != null) query = query.or(cursor.filter);
+      final page = await query
+          .order('performed_at', ascending: false)
+          .order('id', ascending: false)
+          .limit(pageSize);
+      _requireOwner(viewer);
+      if (page.isEmpty) break;
+      if (page.length > pageSize) {
+        throw StateError('Invalid friend history page');
+      }
+      for (final row in page) {
+        if (row['user_id'] != owner) {
+          throw StateError('Invalid friend history owner');
+        }
+        final next = _FriendHistoryCursor.fromRow(row);
+        if (!seenIds.add(next.id) ||
+            (cursor != null && !next.isBefore(cursor))) {
+          throw StateError('Friend history did not advance');
+        }
+        result.add(row);
+        cursor = next;
+      }
+      // A server row cap can be smaller than pageSize. Only an empty page is
+      // conclusive; offset pagination could skip rows deleted between reads.
+    }
+    if (result.isNotEmpty) {
+      // Access may have been revoked after earlier pages. Recheck current RLS
+      // without a cursor so a revoked share cannot publish accumulated rows.
+      _requireOwner(viewer);
+      final visible = await client
+          .from('friend_workouts')
+          .select('id')
+          .eq('user_id', owner)
+          .limit(1);
+      _requireOwner(viewer);
+      if (visible.isEmpty) return [];
+      if (visible.length != 1 ||
+          !_FriendHistoryCursor.validId(visible.single['id'])) {
+        throw StateError('Invalid friend history visibility');
+      }
+    }
+    return result;
+  }
+
   /// Exact RLS-protected lookup also works beyond the history feed's page size.
   Future<Map<String, dynamic>?> workoutById(String id) async =>
       await client.from('friend_workouts').select().eq('id', id).maybeSingle();
@@ -602,5 +665,78 @@ class FriendsRepository {
         .delete()
         .eq('id', id)
         .eq('user_id', userId);
+  }
+}
+
+/// The database orders a timestamptz and a UUID, not the timestamp's spelling.
+/// Preserve the original timestamp in filters (including microseconds/offset),
+/// while comparing instants and canonical UUIDs to reject stalled pages.
+class _FriendHistoryCursor {
+  _FriendHistoryCursor(this.performedAt, this.instant, this.id);
+
+  factory _FriendHistoryCursor.fromRow(Map<String, dynamic> row) {
+    final performedAt = row['performed_at'];
+    final id = row['id'];
+    final instant = _parseInstant(performedAt);
+    if (!validId(id) ||
+        performedAt is! String ||
+        instant == null ||
+        !instant.isUtc) {
+      throw StateError('Invalid friend history cursor');
+    }
+    return _FriendHistoryCursor(
+      performedAt,
+      instant,
+      (id as String).toLowerCase(),
+    );
+  }
+
+  static final _uuid = RegExp(
+    r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$',
+  );
+  static bool validId(Object? id) => id is String && _uuid.hasMatch(id);
+
+  static final _timestamp = RegExp(
+    r'^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d{1,6})?(?:Z|[+-](\d{2}):(\d{2}))$',
+  );
+
+  static DateTime? _parseInstant(Object? value) {
+    if (value is! String) return null;
+    final match = _timestamp.firstMatch(value);
+    if (match == null) return null;
+    final year = int.parse(match[1]!);
+    final month = int.parse(match[2]!);
+    final day = int.parse(match[3]!);
+    if (month < 1 ||
+        month > 12 ||
+        day < 1 ||
+        day > DateTime.utc(year, month + 1, 0).day ||
+        int.parse(match[4]!) > 23 ||
+        int.parse(match[5]!) > 59 ||
+        int.parse(match[6]!) > 59 ||
+        int.parse(match[7] ?? '0') > 23 ||
+        int.parse(match[8] ?? '0') > 59) {
+      return null;
+    }
+    return DateTime.tryParse(value);
+  }
+
+  final String performedAt;
+  final DateTime instant;
+  final String id;
+
+  bool isBefore(_FriendHistoryCursor previous) {
+    final order = instant.compareTo(previous.instant);
+    return order < 0 || (order == 0 && id.compareTo(previous.id) < 0);
+  }
+
+  // PostgREST's logic grammar needs quoted literals as well as URL encoding.
+  // Escape backslashes before quotes so a value cannot become filter syntax.
+  static String _literal(String value) =>
+      '"${value.replaceAll('\\', '\\\\').replaceAll('"', '\\"')}"';
+
+  String get filter {
+    final time = _literal(performedAt);
+    return 'performed_at.lt.$time,and(performed_at.eq.$time,id.lt.${_literal(id)})';
   }
 }

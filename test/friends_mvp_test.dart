@@ -88,6 +88,10 @@ class FakeFriends extends FriendsRepository {
   }
 
   @override
+  Future<List<Map<String, dynamic>>> history({required String owner}) =>
+      feed(owner: owner);
+
+  @override
   Future<List<Map<String, dynamic>>> feed({String? owner}) async {
     if (fail) throw StateError('offline');
     return [

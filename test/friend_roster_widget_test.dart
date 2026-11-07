@@ -66,6 +66,11 @@ class PagedFriends extends RosterFriends {
       },
   ];
   @override
+  Future<List<Map<String, dynamic>>> history({required String owner}) async => [
+    ...await feed(owner: owner),
+    if (exactVisible) (await historyWorkoutById('old-edited', owner))!,
+  ];
+  @override
   Future<Map<String, dynamic>?> historyWorkoutById(
     String id,
     String owner,
