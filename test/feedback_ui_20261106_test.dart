@@ -248,8 +248,8 @@ void main() {
           ),
         );
         expect(find.text('2026/11'), findsOneWidget);
-        expect(find.text('Workout 1'), findsOneWidget);
-        expect(find.text('Workout 2'), findsOneWidget);
+        expect(find.text('Workout 1'), findsNothing);
+        expect(find.text('Workout 2'), findsNothing);
         expect(find.text('23:30'), findsNothing);
         expect(find.text('08:30'), findsNothing);
         await t.scrollUntilVisible(
@@ -258,7 +258,7 @@ void main() {
           scrollable: find.byType(Scrollable).first,
         );
         expect(find.byKey(const Key('workoutDetailSummary')), findsOneWidget);
-        expect(find.text('2分'), findsWidgets);
+        expect(find.text('4分'), findsWidgets);
         expect(t.takeException(), isNull);
         await capture(
           t,

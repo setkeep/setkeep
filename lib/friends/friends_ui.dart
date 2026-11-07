@@ -861,7 +861,7 @@ class _FriendActivityPageState extends State<FriendActivityPage>
   List<Map<String, dynamic>> comments = [];
   bool busy = false;
   Map<String, dynamic>? selected;
-  List<Map<String, dynamic>> likerPhotos = [];
+  Map<String, List<Map<String, dynamic>>> dayLikerPhotos = {};
   bool _notificationOpened = false;
   DateTime _visibleMonth = DateTime(DateTime.now().year, DateTime.now().month);
   DateTime? _selectedDay;
@@ -945,11 +945,23 @@ class _FriendActivityPageState extends State<FriendActivityPage>
     final messages = current == null || !widget.repository.commentsEnabled
         ? <Map<String, dynamic>>[]
         : await widget.repository.comments(current['id'] as String);
-    var photos = <Map<String, dynamic>>[];
-    if (current != null) {
-      try {
-        photos = await widget.repository.likerAvatars(current['id'] as String);
-      } catch (_) {}
+    final day = _calendarInitialized
+        ? _selectedDay
+        : (current == null ? null : socialWorkout(current).date.toLocal());
+    final photos = <String, List<Map<String, dynamic>>>{};
+    if (day != null) {
+      await Future.wait(
+        result
+            .where((row) => _sameDay(socialWorkout(row).date.toLocal(), day))
+            .map((row) async {
+              final id = row['id'] as String;
+              try {
+                photos[id] = await widget.repository.likerAvatars(id);
+              } catch (_) {
+                photos[id] = [];
+              }
+            }),
+      );
     }
     if (widget.repository.userId != _viewer) return;
     if (mounted) {
@@ -957,7 +969,7 @@ class _FriendActivityPageState extends State<FriendActivityPage>
         rows = result;
         selected = current;
         comments = messages;
-        likerPhotos = photos;
+        dayLikerPhotos = photos;
         if (!_calendarInitialized) {
           final date = current == null
               ? null
@@ -1018,13 +1030,63 @@ class _FriendActivityPageState extends State<FriendActivityPage>
           repository: widget.repository,
           workoutId: row['id'] as String,
           ownerId: widget.owner,
-          commentNotificationId: widget.commentNotificationId,
+          commentNotificationId: row['id'] == widget.selectedId
+              ? widget.commentNotificationId
+              : null,
           notificationRepository: widget.notificationRepository,
           onCommentViewed: widget.onCommentViewed,
         ),
       ),
     );
     if (mounted) await run(load);
+  }
+
+  List<Widget> _dayRecordDetails(Map<String, dynamic> row) {
+    final workout = socialWorkout(row);
+    final id = row['id'] as String;
+    final likes = (row['friend_likes'] as List?) ?? [];
+    final liked = likes.any(
+      (like) => like['user_id'] == widget.repository.userId,
+    );
+    final commentCount = row['id'] == selected?['id']
+        ? comments.length
+        : ((row['friend_comments'] as List?) ?? []).length;
+    return [
+      for (final group in workout.exerciseGroups.values)
+        WorkoutDetailExerciseCard(sets: group, showCompletionChecks: false),
+      Wrap(
+        crossAxisAlignment: WrapCrossAlignment.center,
+        spacing: 8,
+        children: [
+          TextButton.icon(
+            key: ValueKey('friendLike-$id'),
+            onPressed: busy
+                ? null
+                : () => run(() async {
+                    await widget.repository.like(id, !liked);
+                    await load();
+                  }),
+            icon: Icon(
+              liked ? Icons.favorite : Icons.favorite_border,
+              color: liked ? const Color(0xFFC7F36B) : null,
+            ),
+            label: Text('${label(context, 'いいね', 'Like')} ${likes.length}'),
+          ),
+          LikeAvatarStrip(
+            repository: widget.repository,
+            likes: dayLikerPhotos[id] ?? [],
+          ),
+        ],
+      ),
+      if (widget.repository.commentsEnabled)
+        OutlinedButton.icon(
+          key: ValueKey('openWorkoutComments-$id'),
+          icon: const Icon(Icons.chat_bubble_outline),
+          label: Text('${label(context, 'コメント', 'Comments')} $commentCount'),
+          onPressed: busy ? null : () => openComments(row),
+        ),
+      const SizedBox(height: 22),
+    ];
   }
 
   @override
@@ -1036,10 +1098,20 @@ class _FriendActivityPageState extends State<FriendActivityPage>
                 (r) => _sameDay(socialWorkout(r).date.toLocal(), _selectedDay!),
               )
               .toList();
-    final row = selected;
-    final workout = row == null ? null : socialWorkout(row);
-    final likes = (row?['friend_likes'] as List?) ?? [];
-    final liked = likes.any((l) => l['user_id'] == widget.repository.userId);
+    final dayWorkouts = shownRows.map(socialWorkout).toList();
+    // Display-only aggregation. Original records and social action IDs stay intact.
+    final dayWorkout = dayWorkouts.isEmpty
+        ? null
+        : WorkoutRecord(
+            date: _selectedDay!,
+            sets: dayWorkouts.expand((workout) => workout.sets).toList(),
+            durationSeconds: dayWorkouts.fold<int>(
+              0,
+              (total, workout) =>
+                  total +
+                  (workout.durationSeconds > 0 ? workout.durationSeconds : 0),
+            ),
+          );
     return Scaffold(
       appBar: AppBar(
         title: Text(
@@ -1124,6 +1196,7 @@ class _FriendActivityPageState extends State<FriendActivityPage>
                     selected = null;
                     comments = [];
                   });
+                  run(load);
                 },
               ),
               const SizedBox(height: 22),
@@ -1149,73 +1222,14 @@ class _FriendActivityPageState extends State<FriendActivityPage>
                     ),
                   ),
                 ),
-              if (workout == null || shownRows.length > 1)
-                for (var index = 0; index < shownRows.length; index++)
-                  ListTile(
-                    key: ValueKey('friendWorkout-${shownRows[index]['id']}'),
-                    selected: shownRows[index]['id'] == row?['id'],
-                    title: Text(
-                      label(context, '記録 ${index + 1}', 'Workout ${index + 1}'),
-                    ),
-                    subtitle: Text(
-                      socialWorkout(shownRows[index]).summaryLabel,
-                    ),
-                    onTap: busy
-                        ? null
-                        : () => run(() async {
-                            selected = shownRows[index];
-                            await load();
-                          }),
-                  ),
-              if (workout != null) ...[
+              if (dayWorkout != null) ...[
                 const SizedBox(height: 10),
                 WorkoutDetailSummary(
-                  workout: workout,
+                  workout: dayWorkout,
                   alwaysShowDuration: true,
                 ),
                 const SizedBox(height: 22),
-                for (final group in workout.exerciseGroups.values)
-                  WorkoutDetailExerciseCard(
-                    sets: group,
-                    showCompletionChecks: false,
-                  ),
-                Wrap(
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  spacing: 8,
-                  children: [
-                    TextButton.icon(
-                      onPressed: busy
-                          ? null
-                          : () => run(() async {
-                              await widget.repository.like(
-                                row!['id'] as String,
-                                !liked,
-                              );
-                              await load();
-                            }),
-                      icon: Icon(
-                        liked ? Icons.favorite : Icons.favorite_border,
-                        color: liked ? const Color(0xFFC7F36B) : null,
-                      ),
-                      label: Text(
-                        '${label(context, 'いいね', 'Like')} ${likes.length}',
-                      ),
-                    ),
-                    LikeAvatarStrip(
-                      repository: widget.repository,
-                      likes: likerPhotos,
-                    ),
-                  ],
-                ),
-                if (widget.repository.commentsEnabled)
-                  OutlinedButton.icon(
-                    key: const Key('openWorkoutComments'),
-                    icon: const Icon(Icons.chat_bubble_outline),
-                    label: Text(
-                      '${label(context, 'コメント', 'Comments')} ${comments.length}',
-                    ),
-                    onPressed: busy ? null : () => openComments(row!),
-                  ),
+                for (final row in shownRows) ..._dayRecordDetails(row),
               ],
             ],
           ),
